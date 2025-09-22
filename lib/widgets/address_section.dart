@@ -23,6 +23,7 @@ class AddressSection extends StatefulWidget {
   final Future<void> Function()? savePersistedData;
   final Future<void> Function()? checkStoreByCep;
   final PedidoState? pedido;
+  final VoidCallback? onReset;
 
   const AddressSection({
     Key? key,
@@ -41,6 +42,7 @@ class AddressSection extends StatefulWidget {
     this.savePersistedData,
     this.checkStoreByCep,
     this.pedido,
+    this.onReset,
   }) : super(key: key);
 
   @override
@@ -62,19 +64,33 @@ class _AddressSectionState extends State<AddressSection> {
   );
 
   @override
-  void initState() {
-    super.initState();
-    widget.cepController.addListener(_onCepChanged);
-    _shippingCostController.text = widget.externalShippingCost.toStringAsFixed(2);
-  }
+void initState() {
+  super.initState();
+  widget.cepController.addListener(_onCepChanged);
+  widget.addressController.addListener(_onFieldChanged);
+  widget.numberController.addListener(_onFieldChanged);
+  widget.complementController.addListener(_onFieldChanged);
+  widget.neighborhoodController.addListener(_onFieldChanged);
+  widget.cityController.addListener(_onFieldChanged);
+  _shippingCostController.text = widget.pedido?.shippingCostController.text ?? widget.externalShippingCost.toStringAsFixed(2);
+}
+void _onFieldChanged() {
+  widget.onChanged(widget.cepController.text); // Pode usar o campo relevante
+  widget.savePersistedData?.call();
+}
 
   @override
-  void dispose() {
-    widget.cepController.removeListener(_onCepChanged);
-    _debounce?.cancel();
-    _shippingCostController.dispose();
-    super.dispose();
-  }
+void dispose() {
+  widget.cepController.removeListener(_onCepChanged);
+  widget.addressController.removeListener(_onFieldChanged);
+  widget.numberController.removeListener(_onFieldChanged);
+  widget.complementController.removeListener(_onFieldChanged);
+  widget.neighborhoodController.removeListener(_onFieldChanged);
+  widget.cityController.removeListener(_onFieldChanged);
+  _debounce?.cancel();
+  _shippingCostController.dispose();
+  super.dispose();
+}
 
   void _onCepChanged() {
     widget.onChanged(widget.cepController.text);
@@ -93,7 +109,6 @@ class _AddressSectionState extends State<AddressSection> {
         widget.savePersistedData?.call();
       }
     } else {
-      // Reset completo ao limpar o CEP
       widget.onShippingCostUpdated(0.0);
       widget.onStoreUpdated('', '');
       setState(() {
@@ -185,7 +200,7 @@ class _AddressSectionState extends State<AddressSection> {
   void _startEditingShippingCost() {
     setState(() {
       _isEditingShippingCost = true;
-      _tempShippingCost = widget.externalShippingCost;
+      _tempShippingCost = widget.pedido?.shippingCost ?? widget.externalShippingCost;
       _shippingCostController.text = _tempShippingCost.toStringAsFixed(2);
     });
   }
@@ -195,8 +210,10 @@ class _AddressSectionState extends State<AddressSection> {
     if (newCost >= 0) {
       widget.setStateCallback?.call();
       widget.onShippingCostUpdated(newCost);
-      widget.pedido?.shippingCost = newCost;
-      widget.pedido?.shippingCostController.text = newCost.toStringAsFixed(2);
+      if (widget.pedido != null) {
+        widget.pedido!.shippingCost = newCost;
+        widget.pedido!.shippingCostController.text = newCost.toStringAsFixed(2);
+      }
       widget.savePersistedData?.call();
     }
     setState(() {
@@ -207,30 +224,26 @@ class _AddressSectionState extends State<AddressSection> {
   void _cancelEditingShippingCost() {
     setState(() {
       _isEditingShippingCost = false;
-      _shippingCostController.text = widget.externalShippingCost.toStringAsFixed(2);
+      _shippingCostController.text = widget.pedido?.shippingCostController.text ?? widget.externalShippingCost.toStringAsFixed(2);
     });
   }
 
-  // Tornar o método público para ser acessado via GlobalKey
   void resetSection() {
+  if (!mounted) return;
   setState(() {
     _storeIndication = null;
     _isEditingShippingCost = false;
     _shippingCostController.text = '0.00';
   });
-  // Resetar todos os controladores de texto
   widget.cepController.clear();
   widget.addressController.clear();
   widget.numberController.clear();
   widget.complementController.clear();
   widget.neighborhoodController.clear();
   widget.cityController.clear();
-  // Atualizar callbacks
   widget.onShippingCostUpdated(0.0);
   widget.onStoreUpdated('', '');
-  // Salvar persistência
   widget.savePersistedData?.call();
-  // Resetar campos no PedidoState, se disponível
   if (widget.pedido != null) {
     widget.pedido!.cepController.clear();
     widget.pedido!.addressController.clear();
@@ -241,7 +254,9 @@ class _AddressSectionState extends State<AddressSection> {
     widget.pedido!.storeFinal = '';
     widget.pedido!.pickupStoreId = '';
   }
+  widget.onReset?.call();
 }
+
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;

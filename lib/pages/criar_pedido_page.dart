@@ -216,17 +216,17 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
   }
 
   @override
-  void dispose() {
-    _savePedidos();
-    _tabController.removeListener(_handleTabSelection);
-    _tabController.dispose();
-    _debounce?.cancel();
-    for (var pedido in _pedidos) {
-      pedido.nameController.removeListener(_updateTabs);
-      pedido.dispose();
-    }
-    super.dispose();
+void dispose() {
+  _savePedidos();
+  _tabController.removeListener(_handleTabSelection);
+  _tabController.dispose();
+  _debounce?.cancel(); // Adicionar cancelamento explícito
+  for (var pedido in _pedidos) {
+    pedido.nameController.removeListener(_updateTabs);
+    pedido.dispose();
   }
+  super.dispose();
+}
 
   void _handleTabSelection() {
     if (_tabController.index != _currentTabIndex && mounted) {
@@ -243,12 +243,12 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
   }
 
   Future<void> _restorePedidos() async {
-    final prefs = await SharedPreferences.getInstance();
-    final pedidosJson = prefs.getStringList('pedidos') ?? ['{}'];
-    for (var json in pedidosJson) {
-      final pedidoData = jsonDecode(json) as Map<String, dynamic>;
-      final pedido = PedidoState.fromJson(pedidoData);
-      final pedidoWithCallback = PedidoState(onCouponValidated: _onCouponValidated);
+  final prefs = await SharedPreferences.getInstance();
+  final pedidosJson = prefs.getStringList('pedidos') ?? ['{}'];
+  for (var json in pedidosJson) {
+    final pedidoData = jsonDecode(json) as Map<String, dynamic>;
+    final pedido = PedidoState.fromJson(pedidoData);
+    final pedidoWithCallback = PedidoState(onCouponValidated: _onCouponValidated);
 
       // Inicializar campos do pedido
       pedidoWithCallback.phoneController.text = pedido.phoneController.text;
@@ -276,15 +276,18 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
       pedidoWithCallback.showCouponField = pedido.showCouponField;
 
       // Inicializar data e horário com valores padrão, se necessário
-      pedidoWithCallback.schedulingDate = pedido.schedulingDate.isEmpty
-          ? DateFormat('yyyy-MM-dd').format(DateTime.now())
-          : pedido.schedulingDate;
+      pedidoWithCallback.schedulingDate = normalizeYmd(pedido.schedulingDate.isEmpty
+        ? DateFormat('yyyy-MM-dd').format(DateTime.now())
+        : pedido.schedulingDate); // Normaliza a data
       final isSunday = DateTime.now().weekday == DateTime.sunday;
-      final defaultTimeSlot = pedido.shippingMethod == 'pickup' && isSunday
-          ? '09:00 - 12:00'
-          : '09:00 - 12:00'; // Primeiro slot disponível
+    final defaultTimeSlot = pedido.shippingMethod == 'pickup' && isSunday
+        ? '09:00 - 12:00'
+        : '14:00 - 17:00';
       pedidoWithCallback.schedulingTime = ensureTimeRange(
-          pedido.schedulingTime.isEmpty ? defaultTimeSlot : pedido.schedulingTime);
+  pedido.schedulingTime.isEmpty
+      ? (pedido.shippingMethod == 'pickup' && isSunday ? '09:00 - 12:00' : '14:00 - 17:00')
+      : pedido.schedulingTime
+);
 
       pedidoWithCallback.isCustomerSectionExpanded = pedido.isCustomerSectionExpanded;
       pedidoWithCallback.isAddressSectionExpanded = pedido.isAddressSectionExpanded;
@@ -304,14 +307,14 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
 
     // Criar um novo pedido se a lista estiver vazia
     if (_pedidos.isEmpty) {
-      final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
-      newPedido.nameController.addListener(_updateTabs);
-      newPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      newPedido.schedulingTime = '09:00 - 12:00'; // Valor padrão
-      newPedido.shippingMethod = 'delivery'; // Definir padrão para 'delivery'
-      _pedidos.add(newPedido);
-    }
+    final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
+    newPedido.nameController.addListener(_updateTabs);
+    newPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    newPedido.schedulingTime = '09:00 - 12:00';
+    newPedido.shippingMethod = 'delivery';
+    _pedidos.add(newPedido);
   }
+}
 
   Future<void> _savePedidos() async {
     final prefs = await SharedPreferences.getInstance();
@@ -320,8 +323,8 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
   }
 
   Future<void> _loadPersistedData(PedidoState pedido) async {
-    final prefs = await SharedPreferences.getInstance();
-    final index = _pedidos.indexOf(pedido);
+  final prefs = await SharedPreferences.getInstance();
+  final index = _pedidos.indexOf(pedido);
     if (index >= 0 && prefs.getString('phone_$index') == null) {
       pedido.phoneController.text = '';
       pedido.nameController.text = '';
@@ -377,8 +380,8 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
     pedido.pickupStoreId = prefs.getString('pickupStoreId_$index') ?? '';
     pedido.showNotesField = prefs.getBool('showNotesField_$index') ?? false;
     pedido.showCouponField = prefs.getBool('showCouponField_$index') ?? false;
-    pedido.schedulingDate = prefs.getString('schedulingDate_$index') ?? '';
-    pedido.schedulingTime = ensureTimeRange(prefs.getString('schedulingTime_$index') ?? '');
+    pedido.schedulingDate = prefs.getString('schedulingDate_$index') ?? DateFormat('yyyy-MM-dd').format(DateTime.now());
+    pedido.schedulingTime = ensureTimeRange(prefs.getString('schedulingTime_$index') ?? '09:00 - 12:00');
     pedido.isCustomerSectionExpanded = prefs.getBool('isCustomerSectionExpanded_$index') ?? true;
     pedido.isAddressSectionExpanded = prefs.getBool('isAddressSectionExpanded_$index') ?? true;
     pedido.isProductsSectionExpanded = prefs.getBool('isProductsSectionExpanded_$index') ?? true;
@@ -641,6 +644,7 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
   final normalizedDate = normalizeYmd(currentPedido.schedulingDate);
   final normalizedTime = ensureTimeRange(currentPedido.schedulingTime);
 
+
   // Validar telefone
   final phone = currentPedido.phoneController.text.replaceAll(RegExp(r'\D'), '').trim();
   if (phone.length != 11) {
@@ -708,7 +712,6 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
     errors.add('Selecione a data e o horário de entrega/retirada');
   }
 
-  // Mostrar erros, se houver
   if (errors.isNotEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -719,13 +722,13 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
     return;
   }
 
-  if (mounted) {
-    setState(() {
-      _isLoading = true;
-    });
-  }
-
   try {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
+
     if (currentPedido.shippingMethod == 'delivery' && currentPedido.storeFinal.isEmpty) {
       await _checkStoreByCep();
     }
@@ -739,7 +742,6 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
         'time(raw)="${currentPedido.schedulingTime}" '
         '-> date(norm)="$normalizedDate" time(norm)="$normalizedTime"');
 
-    // Normaliza a loja antes de criar o pedido
     final storeFinal = currentPedido.storeFinal.isEmpty ? 'Central Distribuição (Sagrada Família)' : currentPedido.storeFinal;
     final storeId = StoreNormalize.getId(storeFinal);
     final normalizedStoreFinal = StoreNormalize.getName(storeId);
@@ -859,13 +861,15 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
       setState(() {
         _isLoading = false;
       });
-      // Delegar o reset do AddressSection ao KeepAliveTab
       final tabState = context.findAncestorStateOfType<_KeepAliveTabState>();
-      tabState?.resetAddressSection();
+      if (tabState != null) {
+        tabState.resetAddressSection();
+      }
       _savePersistedData(currentPedido);
     }
   }
 }
+
   Future<void> _sendWhatsAppMessage(String phoneNumber, String message) async {
     final cleanMessage = message.trim();
   }
@@ -1182,20 +1186,29 @@ class KeepAliveTab extends StatefulWidget {
 }
 
 class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClientMixin {
-  final _formKey = GlobalKey<FormState>(); // Adicionado
-  final GlobalKey _addressSectionKey = GlobalKey(); // Ajustado para GlobalKey genérico
+  final _formKey = GlobalKey<FormState>();
+  final GlobalKey _addressSectionKey = GlobalKey(); // Adicionado
   final primaryColor = const Color(0xFFF28C38);
-
-  void resetAddressSection() {
-  final addressState = _addressSectionKey.currentState;
-  if (addressState != null) {
-    addressState.resetSection(); 
-  }
-}
-
   bool _isEditingShippingCost = false;
   double _tempShippingCost = 0.0;
   final _shippingCostController = TextEditingController();
+
+ void resetAddressSection() {
+  final addressState = _addressSectionKey.currentState;
+  if (addressState != null) {
+    (addressState as dynamic).resetSection(); // Cast dinâmico
+    widget.pedido.cepController.clear();
+    widget.pedido.addressController.clear();
+    widget.pedido.numberController.clear();
+    widget.pedido.complementController.clear();
+    widget.pedido.neighborhoodController.clear();
+    widget.pedido.cityController.clear();
+    widget.setStateCallback();
+    widget.savePersistedData(widget.pedido);
+  } else {
+    debugPrint('Erro: Estado do AddressSection não encontrado.');
+  }
+}
 
   @override
   bool get wantKeepAlive => true;
@@ -1204,7 +1217,7 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
   void initState() {
     super.initState();
     widget.pedido.addListener(_updateState);
-    _shippingCostController.text = widget.pedido.shippingCost.toStringAsFixed(2);
+    _shippingCostController.text = widget.pedido.shippingCostController.text;
   }
 
  @override
@@ -1240,7 +1253,7 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
   void _cancelEditingShippingCost() {
     setState(() {
       _isEditingShippingCost = false;
-      _shippingCostController.text = widget.pedido.shippingCost.toStringAsFixed(2);
+      _shippingCostController.text = widget.pedido.shippingCostController.text;
     });
   }
 
@@ -1263,39 +1276,39 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
   }
 
   @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    final totalOriginal = widget.pedido.calculateTotal(applyDiscount: false);
-    final totalWithDiscount = widget.pedido.calculateTotal(applyDiscount: true);
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+Widget build(BuildContext context) {
+  super.build(context);
+  final totalOriginal = widget.pedido.calculateTotal(applyDiscount: false);
+  final totalWithDiscount = widget.pedido.calculateTotal(applyDiscount: true);
+  final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
-      color: isDarkMode ? Colors.grey[900] : Colors.grey[50],
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutCubic,
-                decoration: BoxDecoration(
-                  color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                 boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    children: [
-                      CustomerSection(
+  return Container(
+    color: isDarkMode ? Colors.grey[900] : Colors.grey[50],
+    child: Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              decoration: BoxDecoration(
+                color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    CustomerSection(
                         phoneController: widget.pedido.phoneController,
                         onPhoneChanged: (String value) {
                           widget.savePersistedData(widget.pedido);
@@ -1379,6 +1392,7 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
                               savePersistedData: () => widget.savePersistedData(widget.pedido),
                               checkStoreByCep: widget.checkStoreByCep,
                               pedido: widget.pedido,
+                              onReset: resetAddressSection,
                             ),
                             isExpanded: widget.pedido.isAddressSectionExpanded,
                           ),

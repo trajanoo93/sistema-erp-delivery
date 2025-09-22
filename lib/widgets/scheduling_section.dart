@@ -31,14 +31,14 @@ class _SchedulingSectionState extends State<SchedulingSection> {
     _initializeFields();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _updateTimeSlots(_selectedDate);
+        _updateTimeSlots(_selectedDate ?? DateTime.now()); // Forçar data atual se nula
         _updateParent();
       }
     });
   }
 
   void _initializeFields() {
-    _selectedDate = widget.initialDate;
+    _selectedDate = widget.initialDate ?? DateTime.now(); // Garantir data atual como fallback
     _selectedTimeSlot = widget.initialTimeSlot;
   }
 
@@ -51,7 +51,7 @@ class _SchedulingSectionState extends State<SchedulingSection> {
       _initializeFields();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          _updateTimeSlots(_selectedDate);
+          _updateTimeSlots(_selectedDate ?? DateTime.now()); // Forçar data atual se nula
           _updateParent();
         }
       });
@@ -59,60 +59,60 @@ class _SchedulingSectionState extends State<SchedulingSection> {
   }
 
   void _updateTimeSlots(DateTime? date) {
-  if (date == null) {
-    setState(() {
-      _availableTimeSlots = [];
-      _selectedTimeSlot = null;
-    });
-    _updateParent();
-    return;
-  }
-
-  final now = DateTime.now();
-  final isToday = date.day == now.day && date.month == now.month && date.year == now.year;
-  final currentHour = now.hour;
-  final currentMinute = now.minute;
-  final currentTimeInMinutes = currentHour * 60 + currentMinute;
-
-  List<String> slots = [];
-  bool isSunday = date.weekday == DateTime.sunday;
-
-  if (widget.shippingMethod == 'delivery') {
-    if (isSunday) {
-      slots = ['09:00 - 12:00', '12:00 - 15:00', '15:00 - 18:00'];
-    } else {
-      slots = ['09:00 - 12:00', '12:00 - 15:00', '15:00 - 18:00', '18:00 - 21:00'];
+    if (date == null) {
+      setState(() {
+        _availableTimeSlots = [];
+        _selectedTimeSlot = null;
+      });
+      _updateParent();
+      return;
     }
-  } else {
-    // pickup
-    if (isSunday) {
-      slots = ['09:00 - 12:00'];
-    } else {
-      slots = ['09:00 - 12:00', '12:00 - 15:00', '15:00 - 18:00'];
-    }
-  }
 
-  if (isToday) {
-    slots = slots.where((slot) {
-      final endTime = int.parse(slot.split(' - ')[1].split(':')[0]);
-      final endTimeInMinutes = endTime * 60;
-      return endTimeInMinutes > currentTimeInMinutes;
-    }).toList();
-  }
+    final now = DateTime.now();
+    final isToday = date.day == now.day && date.month == now.month && date.year == now.year;
+    final currentHour = now.hour;
+    final currentMinute = now.minute;
+    final currentTimeInMinutes = currentHour * 60 + currentMinute;
 
-  setState(() {
-    _availableTimeSlots = slots;
-    // Garantir que _selectedTimeSlot seja definido se houver slots disponíveis
-    if (_availableTimeSlots.isNotEmpty) {
-      if (_selectedTimeSlot == null || !_availableTimeSlots.contains(_selectedTimeSlot)) {
-        _selectedTimeSlot = _availableTimeSlots.first; // Selecionar o primeiro slot disponível
+    List<String> slots = [];
+    bool isSunday = date.weekday == DateTime.sunday;
+
+    if (widget.shippingMethod == 'delivery') {
+      if (isSunday) {
+        slots = ['09:00 - 12:00', '12:00 - 15:00', '15:00 - 18:00'];
+      } else {
+        slots = ['09:00 - 12:00', '12:00 - 15:00', '15:00 - 18:00', '18:00 - 21:00'];
       }
     } else {
-      _selectedTimeSlot = null; // Nenhum slot disponível
+      // pickup
+      if (isSunday) {
+        slots = ['09:00 - 12:00'];
+      } else {
+        slots = ['09:00 - 12:00', '12:00 - 15:00', '15:00 - 18:00'];
+      }
     }
-  });
-  _updateParent();
-}
+
+    if (isToday) {
+      slots = slots.where((slot) {
+        final endTime = int.parse(slot.split(' - ')[1].split(':')[0]);
+        final endTimeInMinutes = endTime * 60;
+        return endTimeInMinutes > currentTimeInMinutes;
+      }).toList();
+    }
+
+    setState(() {
+      _availableTimeSlots = slots;
+      // Garantir que _selectedTimeSlot seja definido se houver slots disponíveis
+      if (_availableTimeSlots.isNotEmpty) {
+        if (_selectedTimeSlot == null || !_availableTimeSlots.contains(_selectedTimeSlot)) {
+          _selectedTimeSlot = _availableTimeSlots.first; // Selecionar o primeiro slot disponível
+        }
+      } else {
+        _selectedTimeSlot = null; // Nenhum slot disponível
+      }
+    });
+    _updateParent();
+  }
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
@@ -155,11 +155,11 @@ class _SchedulingSectionState extends State<SchedulingSection> {
   }
 
   void _updateParent() {
-  if (mounted && _selectedDate != null && _selectedTimeSlot != null) {
-    String formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate!);
-    widget.onDateTimeUpdated(formattedDate, _selectedTimeSlot!);
+    if (mounted && _selectedDate != null && _selectedTimeSlot != null) {
+      String formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate!);
+      widget.onDateTimeUpdated(formattedDate, _selectedTimeSlot!);
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -170,47 +170,41 @@ class _SchedulingSectionState extends State<SchedulingSection> {
         Row(
           children: [
             Expanded(
-              child: TextFormField(
-                readOnly: true,
-                decoration: InputDecoration(
-                  labelText: widget.shippingMethod == 'delivery' ? 'Data de Entrega' : 'Data de Retirada',
-                  labelStyle: GoogleFonts.poppins(
-                    color: isDarkMode ? Colors.white70 : Colors.black54,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: Colors.orange.shade200,
+              child: GestureDetector(
+                onTap: () => _selectDate(context), // Garantir interação
+                child: AbsorbPointer(
+                  child: TextFormField(
+                    readOnly: true,
+                    decoration: InputDecoration(
+                      labelText: widget.shippingMethod == 'delivery' ? 'Data de Entrega' : 'Data de Retirada',
+                      labelStyle: GoogleFonts.poppins(
+                        color: isDarkMode ? Colors.white70 : Colors.black54,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.orange.shade200),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.orange.shade200),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.orange.shade600, width: 2),
+                      ),
+                      prefixIcon: Icon(Icons.calendar_today, color: Colors.orange.shade600),
+                      filled: true,
+                      fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
                     ),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: Colors.orange.shade200,
+                    controller: TextEditingController(
+                      text: _selectedDate != null
+                          ? DateFormat('dd/MM/yyyy').format(_selectedDate!)
+                          : 'Selecione a data',
                     ),
+                    validator: null,
                   ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: Colors.orange.shade600,
-                      width: 2,
-                    ),
-                  ),
-                  prefixIcon: Icon(
-                    Icons.calendar_today,
-                    color: Colors.orange.shade600,
-                  ),
-                  filled: true,
-                  fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
                 ),
-                onTap: () => _selectDate(context),
-                controller: TextEditingController(
-                  text: _selectedDate != null
-                      ? DateFormat('dd/MM/yyyy').format(_selectedDate!)
-                      : 'Selecione a data',
-                ),
-                validator: null, // Validações movidas para _createOrder
               ),
             ),
           ],
@@ -227,27 +221,17 @@ class _SchedulingSectionState extends State<SchedulingSection> {
               ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: Colors.orange.shade200,
-                ),
+                borderSide: BorderSide(color: Colors.orange.shade200),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: Colors.orange.shade200,
-                ),
+                borderSide: BorderSide(color: Colors.orange.shade200),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: Colors.orange.shade600,
-                  width: 2,
-                ),
+                borderSide: BorderSide(color: Colors.orange.shade600, width: 2),
               ),
-              prefixIcon: Icon(
-                Icons.access_time,
-                color: Colors.orange.shade600,
-              ),
+              prefixIcon: Icon(Icons.access_time, color: Colors.orange.shade600),
               filled: true,
               fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
             ),
@@ -265,7 +249,7 @@ class _SchedulingSectionState extends State<SchedulingSection> {
                 _updateParent();
               }
             },
-            validator: null, // Validações movidas para _createOrder
+            validator: null,
           ),
       ],
     );
