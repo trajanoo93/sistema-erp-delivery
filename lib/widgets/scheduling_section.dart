@@ -76,11 +76,17 @@ class _SchedulingSectionState extends State<SchedulingSection> {
     final isToday = _selectedDate != null && _selectedDate!.year == now.year && _selectedDate!.month == now.month && _selectedDate!.day == now.day;
     final isSunday = _selectedDate?.weekday == DateTime.sunday;
     final currentHour = now.hour + (now.minute / 60.0);
+    final isPhysicalStore = widget.storeFinal == 'Unidade Sion' || widget.storeFinal == 'Unidade Barreiro';
+
     setState(() {
       if (isSunday) {
         if (widget.shippingMethod == 'pickup') {
           _availableTimeSlots = ['09:00 - 12:00'];
+        } else if (isPhysicalStore) {
+          // Lojas físicas em domingos: apenas até 15:00
+          _availableTimeSlots = ['09:00 - 12:00', '12:00 - 15:00'];
         } else {
+          // Central Distribuição em domingos
           _availableTimeSlots = ['09:00 - 12:00', '12:00 - 15:00', '15:00 - 18:00'];
         }
       } else {
@@ -112,7 +118,7 @@ class _SchedulingSectionState extends State<SchedulingSection> {
         _selectedTimeSlot = _availableTimeSlots.isNotEmpty ? _availableTimeSlots.first : null;
       }
     });
-    logToFile('Available time slots: $_availableTimeSlots, isToday: $isToday, currentHour: $currentHour');
+    logToFile('Available time slots: $_availableTimeSlots, isToday: $isToday, currentHour: $currentHour, isSunday: $isSunday, isPhysicalStore: $isPhysicalStore');
   }
 
   Future<void> _selectDate(BuildContext context) async {

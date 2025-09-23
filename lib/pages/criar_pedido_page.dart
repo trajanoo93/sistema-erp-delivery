@@ -980,6 +980,7 @@ Future<void> _checkStoreByCep() async {
   String endpoint;
   String proxyPath = paymentMethod == 'Pix' ? 'pagarme.php' : 'stripe.php';
   endpoint = 'https://aogosto.com.br/proxy/${Uri.encodeComponent(proxyUnit)}/$proxyPath';
+  await logToFile('Gerando link de pagamento: paymentMethod=$paymentMethod, storeUnit=$storeUnit, proxyUnit=$proxyUnit, endpoint=$endpoint, amountInCents=$amountInCents');
   try {
     if (paymentMethod == 'Pix') {
       final payloadPagarMe = {
@@ -1003,27 +1004,44 @@ Future<void> _checkStoreByCep() async {
         ],
         'metadata': {'order_id': orderId, 'unidade': normalizedStoreUnit},
       };
-      await logToFile('Payload PagarMe: $payloadPagarMe');
-      final response = await http.post(Uri.parse(endpoint), headers: {'Content-Type': 'application/json'}, body: jsonEncode(payloadPagarMe));
-      await logToFile('Resposta do proxy PagarMe: ${response.body}');
+      await logToFile('Payload PagarMe: ${jsonEncode(payloadPagarMe)}');
+      final response = await http.post(
+        Uri.parse(endpoint),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payloadPagarMe),
+      );
+      await logToFile('Resposta do proxy PagarMe: status=${response.statusCode}, body=${response.body}');
       if (response.statusCode != 200) {
         throw Exception('Erro ao criar pedido PIX: ${jsonDecode(response.body)}');
       }
       final data = jsonDecode(response.body);
-      if (data['charges'] != null && data['charges'][0]['last_transaction'] != null) {
+      if (data['charges'] != null && data['charges'].isNotEmpty && data['charges'][0]['last_transaction'] != null) {
         final pixInfo = data['charges'][0]['last_transaction'];
+        final pixText = pixInfo['text']?.toString() ?? '';
+        if (pixText.isEmpty) {
+          await logToFile('Aviso: pixText vazio, usando qr_code como fallback: ${pixInfo['qr_code'] ?? 'null'}');
+          final fallbackText = pixInfo['qr_code']?.toString() ?? '';
+          if (fallbackText.isEmpty) {
+            throw Exception('Nenhuma linha digitável ou QR code retornado para Pix.');
+          }
+          return {
+            'type': 'pix',
+            'text': fallbackText
+          };
+        }
+        await logToFile('Pix text extraído: $pixText');
         return {
           'type': 'pix',
-          'text': pixInfo['text'] ?? ''
+          'text': pixText
         };
       } else {
-        throw Exception('Nenhuma transação PIX retornada.');
+        throw Exception('Nenhuma transação PIX retornada ou estrutura de resposta inválida: ${jsonEncode(data)}');
       }
     } else {
       final payloadStripe = {
         'product_name': customerName,
         'product_description': 'Produtos Ao Gosto Carnes',
-        'amount': amountInCents, // Enviar em centavos para Stripe
+        'amount': amountInCents,
         'phone_number': '($areaCode) $phone',
         'metadata': {'order_id': orderId, 'unidade': normalizedStoreUnit},
       };
@@ -1042,6 +1060,7 @@ Future<void> _checkStoreByCep() async {
         throw Exception('Erro ao criar link Stripe: ${jsonEncode(data)}');
       }
       if (data['payment_link'] != null && data['payment_link']['url'] != null) {
+        await logToFile('Stripe URL gerada: ${data['payment_link']['url']}');
         return {'type': 'stripe', 'url': data['payment_link']['url']};
       } else {
         throw Exception('Nenhuma URL de checkout retornada.');

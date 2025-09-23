@@ -4,6 +4,7 @@ import 'package:erp_painel_delivery/models/pedido_state.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import '../utils/log_utils.dart';
 
 class SummarySection extends StatelessWidget {
   final double totalOriginal;
@@ -45,6 +46,7 @@ class SummarySection extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nenhuma instrução de pagamento disponível.')),
       );
+      await logToFile('Erro: paymentInstructions is null in _sendPaymentMessage');
       return;
     }
 
@@ -52,8 +54,10 @@ class SummarySection extends StatelessWidget {
     try {
       final paymentData = jsonDecode(paymentInstructions!);
       formattedMessage = paymentData['type'] == 'pix' ? paymentData['text'] ?? '' : paymentData['url'] ?? '';
+      await logToFile('Parsed paymentInstructions: $paymentData, formattedMessage: $formattedMessage');
     } catch (e) {
       formattedMessage = paymentInstructions!;
+      await logToFile('Erro ao parsear paymentInstructions: $e, usando fallback: $formattedMessage');
     }
 
     final url = Uri.parse('https://api.wzap.chat/v1/messages');
@@ -72,9 +76,8 @@ class SummarySection extends StatelessWidget {
         headers: headers,
         body: jsonEncode(payload),
       );
-      print('Resposta da API: ${response.statusCode} - ${response.body}');
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 || response.statusCode == 201 || (response.statusCode == 400 && data['status'] == 'queued')) {
+      await logToFile('Resposta da API WhatsApp: status=${response.statusCode}, body=${response.body}');
+      if (response.statusCode == 200 || response.statusCode == 201 || (response.statusCode == 400 && jsonDecode(response.body)['status'] == 'queued')) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Mensagem enviada com sucesso!')),
         );
@@ -84,6 +87,7 @@ class SummarySection extends StatelessWidget {
         );
       }
     } catch (e) {
+      await logToFile('Erro na conexão com WhatsApp API: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erro na conexão: $e')),
       );
@@ -95,12 +99,14 @@ class SummarySection extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nenhuma instrução de pagamento disponível para copiar.')),
       );
+      await logToFile('Erro: text is null or empty in _copyToClipboard');
       return;
     }
     await Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Instruções copiadas para a área de transferência!')),
     );
+    await logToFile('Texto copiado para a área de transferência: $text');
   }
 
   @override
@@ -116,10 +122,14 @@ class SummarySection extends StatelessWidget {
         final paymentData = jsonDecode(paymentInstructions!);
         paymentText = paymentData['type'] == 'pix' ? paymentData['text'] : paymentData['url'];
         isPix = paymentData['type'] == 'pix';
+        logToFile('Payment instructions parsed: type=${paymentData['type']}, text=${paymentData['text']}, url=${paymentData['url']}');
       } catch (e) {
         paymentText = paymentInstructions;
         isPix = !paymentInstructions!.contains('checkout.stripe.com');
+        logToFile('Erro ao parsear paymentInstructions: $e, usando fallback: $paymentText, isPix: $isPix');
       }
+    } else {
+      logToFile('paymentInstructions is null in SummarySection');
     }
 
     return AnimatedContainer(
