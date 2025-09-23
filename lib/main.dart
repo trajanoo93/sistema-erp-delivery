@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_localizations/flutter_localizations.dart'; // 👈 Import necessário
 import 'widgets/sidebar_menu.dart';
 import 'enums.dart';
 import 'pages/dashboard_page.dart';
@@ -28,6 +29,16 @@ class MyApp extends StatelessWidget {
         textTheme: GoogleFonts.poppinsTextTheme(),
         scaffoldBackgroundColor: Colors.white,
       ),
+      // 👇 Adicionado para suportar traduções (necessário para DatePicker em pt-BR)
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('en', 'US'), // inglês
+        Locale('pt', 'BR'), // português do Brasil
+      ],
       home: const HomePage(),
     );
   }

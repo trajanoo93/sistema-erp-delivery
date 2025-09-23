@@ -2,8 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:intl/intl.dart';
 
 class PedidoState with ChangeNotifier {
+  // Controladores de texto para os campos do formulário
   TextEditingController phoneController = TextEditingController();
   TextEditingController nameController = TextEditingController();
   TextEditingController emailController = TextEditingController();
@@ -16,6 +18,8 @@ class PedidoState with ChangeNotifier {
   TextEditingController notesController = TextEditingController();
   TextEditingController couponController = TextEditingController();
   TextEditingController shippingCostController = TextEditingController();
+
+  // Estado do pedido
   List<Map<String, dynamic>> products = [];
   String shippingMethod = '';
   String selectedVendedor = 'Alline';
@@ -39,42 +43,50 @@ class PedidoState with ChangeNotifier {
   String? storeIndication;
   bool isFetchingStore = false;
   String? lastPhoneNumber;
-
+  String lastCep = ''; // Adicionado para rastrear o último CEP verificado
+  List<Map<String, String>> availablePaymentMethods = [];
+  Map<String, String> paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
   final VoidCallback? onCouponValidated;
 
+  // Credenciais do WooCommerce
   static const String _woocommerceBaseUrl = 'https://aogosto.com.br/delivery/wp-json/wc/v3';
   static const String _consumerKey = 'ck_5156e2360f442f2585c8c9a761ef084b710e811f';
   static const String _consumerSecret = 'cs_c62f9d8f6c08a1d14917e2a6db5dccce2815de8c';
 
   PedidoState({this.onCouponValidated}) {
-  shippingCostController.text = shippingCost.toStringAsFixed(2);
-  couponController.addListener(_onCouponChanged);
-  selectedPaymentMethod = ''; // Inicialização explícita como string vazia
-  schedulingDate = DateTime.now().toIso8601String().split('T')[0]; // Define como hoje por padrão
-}
+    shippingCostController.text = shippingCost.toStringAsFixed(2);
+    couponController.addListener(_onCouponChanged);
+    selectedPaymentMethod = '';
+    schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+  }
 
   void reset() {
-  phoneController.dispose();
-  nameController.dispose();
-  emailController.dispose();
-  cepController.dispose();
-  addressController.dispose();
-  numberController.dispose();
-  complementController.dispose();
-  neighborhoodController.dispose();
-  cityController.dispose();
-  notesController.dispose();
-  couponController.removeListener(_onCouponChanged);
-  couponController.dispose();
-  shippingCostController.dispose();
+    // Libera os controladores atuais
+    phoneController.dispose();
+    nameController.dispose();
+    emailController.dispose();
+    cepController.dispose();
+    addressController.dispose();
+    numberController.dispose();
+    complementController.dispose();
+    neighborhoodController.dispose();
+    cityController.dispose();
+    notesController.dispose();
+    couponController.removeListener(_onCouponChanged);
+    couponController.dispose();
+    shippingCostController.dispose();
 
-  _initializeControllers();
-  shippingCostController.text = shippingCost.toStringAsFixed(2);
-  couponController.addListener(_onCouponChanged);
-  selectedPaymentMethod = '';
-  schedulingDate = DateTime.now().toIso8601String().split('T')[0]; // Reseta para hoje
-  notifyListeners();
-}
+    // Inicializa novos controladores
+    _initializeControllers();
+    shippingCostController.text = shippingCost.toStringAsFixed(2);
+    couponController.addListener(_onCouponChanged);
+    selectedPaymentMethod = '';
+    availablePaymentMethods = [];
+    paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+    schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    lastCep = ''; // Resetar lastCep
+    notifyListeners();
+  }
 
   void _initializeControllers() {
     phoneController = TextEditingController();
@@ -92,6 +104,7 @@ class PedidoState with ChangeNotifier {
   }
 
   void resetControllers() {
+    // Libera os controladores atuais
     phoneController.dispose();
     nameController.dispose();
     emailController.dispose();
@@ -106,10 +119,14 @@ class PedidoState with ChangeNotifier {
     couponController.dispose();
     shippingCostController.dispose();
 
+    // Inicializa novos controladores
     _initializeControllers();
     shippingCostController.text = shippingCost.toStringAsFixed(2);
     couponController.addListener(_onCouponChanged);
-    selectedPaymentMethod = ''; // Resetar explicitamente para string vazia
+    selectedPaymentMethod = '';
+    availablePaymentMethods = [];
+    paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+    lastCep = ''; // Resetar lastCep
     notifyListeners();
   }
 
@@ -126,7 +143,14 @@ class PedidoState with ChangeNotifier {
     if (applyDiscount && isCouponValid) {
       total -= discountAmount;
     }
-    return total;
+    return total < 0 ? 0.0 : total;
+  }
+
+  void updateProductQuantity(int index, int quantity) {
+    if (index >= 0 && index < products.length) {
+      products[index]['quantity'] = quantity > 0 ? quantity : 1;
+      notifyListeners();
+    }
   }
 
   Future<void> _validateCoupon() async {
@@ -137,7 +161,6 @@ class PedidoState with ChangeNotifier {
       _notifyCouponValidation();
       return;
     }
-
     final startTime = DateTime.now();
     try {
       final response = await http.get(
@@ -146,21 +169,19 @@ class PedidoState with ChangeNotifier {
           'Authorization': 'Basic ${base64Encode(utf8.encode('$_consumerKey:$_consumerSecret'))}',
         },
       );
-
       final endTime = DateTime.now();
-      print('API Response - Status: ${response.statusCode}, Body: ${response.body}, Time: ${endTime.difference(startTime).inMilliseconds}ms');
-
+      debugPrint('API Response - Status: ${response.statusCode}, Body: ${response.body}, Time: ${endTime.difference(startTime).inMilliseconds}ms');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as List;
         if (data.isNotEmpty) {
           final coupon = data[0];
-          print('Coupon data: $coupon, amount type: ${coupon['amount'].runtimeType}, discount_type: ${coupon['discount_type']}');
+          debugPrint('Coupon data: $coupon, amount type: ${coupon['amount'].runtimeType}, discount_type: ${coupon['discount_type']}');
           isCouponValid = true;
           if (coupon['discount_type'] == 'percent') {
             final total = products.fold<double>(
-                  0.0,
-                  (sum, product) => sum + (product['price'] * product['quantity']),
-                ) + shippingCost;
+              0.0,
+              (sum, product) => sum + (product['price'] * product['quantity']),
+            ) + shippingCost;
             discountAmount = total * (double.parse(coupon['amount'].toString()) / 100);
           } else {
             discountAmount = double.parse(coupon['amount'].toString());
@@ -181,7 +202,7 @@ class PedidoState with ChangeNotifier {
       discountAmount = 0.0;
       couponErrorMessage = 'Erro na conexão: $e';
     }
-    print('Coupon validation result - isValid: $isCouponValid, amount: $discountAmount, error: $couponErrorMessage');
+    debugPrint('Coupon validation result - isValid: $isCouponValid, amount: $discountAmount, error: $couponErrorMessage');
     _notifyCouponValidation();
     notifyListeners();
   }
@@ -195,13 +216,6 @@ class PedidoState with ChangeNotifier {
     debounce = Timer(const Duration(milliseconds: 500), () async {
       await _validateCoupon();
     });
-  }
-
-  void updateProductQuantity(int index, int quantity) {
-    if (index >= 0 && index < products.length) {
-      products[index]['quantity'] = quantity > 0 ? quantity : 1;
-      notifyListeners();
-    }
   }
 
   Map<String, dynamic> toJson() {
@@ -240,6 +254,9 @@ class PedidoState with ChangeNotifier {
       'storeIndication': storeIndication,
       'isFetchingStore': isFetchingStore,
       'lastPhoneNumber': lastPhoneNumber,
+      'lastCep': lastCep, // Adicionado para persistência
+      'availablePaymentMethods': availablePaymentMethods,
+      'paymentAccounts': paymentAccounts,
     };
   }
 
@@ -279,6 +296,9 @@ class PedidoState with ChangeNotifier {
     pedido.storeIndication = json['storeIndication'] ?? '';
     pedido.isFetchingStore = json['isFetchingStore'] ?? false;
     pedido.lastPhoneNumber = json['lastPhoneNumber'];
+    pedido.lastCep = json['lastCep'] ?? ''; // Adicionado para persistência
+    pedido.availablePaymentMethods = List<Map<String, String>>.from(json['availablePaymentMethods'] ?? []);
+    pedido.paymentAccounts = Map<String, String>.from(json['paymentAccounts'] ?? {'stripe': 'stripe', 'pagarme': 'central'});
     return pedido;
   }
 

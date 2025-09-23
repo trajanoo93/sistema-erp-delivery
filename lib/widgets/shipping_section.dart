@@ -3,24 +3,26 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:erp_painel_delivery/models/pedido_state.dart';
-import 'package:flutter/scheduler.dart'; // Para addPostFrameCallback
+import 'package:flutter/scheduler.dart';
+import 'package:intl/intl.dart';
+import '../utils/log_utils.dart';
 
 class ShippingSection extends StatefulWidget {
   final String cep;
   final Function(String, String) onStoreUpdated;
   final Function(String) onShippingMethodUpdated;
-  final Function(String) onPaymentMethodUpdated;
   final Function(double) onShippingCostUpdated;
   final PedidoState pedido;
+  final Function() onSchedulingChanged;
 
   const ShippingSection({
     Key? key,
     required this.cep,
     required this.onStoreUpdated,
     required this.onShippingMethodUpdated,
-    required this.onPaymentMethodUpdated,
     required this.onShippingCostUpdated,
     required this.pedido,
+    required this.onSchedulingChanged,
   }) : super(key: key);
 
   @override
@@ -37,9 +39,6 @@ class _ShippingSectionState extends State<ShippingSection> {
     'Unidade Barreiro',
     'Unidade Sion',
   ];
-  List<String> _paymentMethods = [];
-  String _selectedPaymentMethod = '';
-  // Removido _selectedDate, pois a data será gerenciada em outro lugar
 
   final Map<String, String> _pickupStoreIds = {
     'Central Distribuição (Sagrada Família)': '86261',
@@ -51,20 +50,19 @@ class _ShippingSectionState extends State<ShippingSection> {
   void initState() {
     super.initState();
     _shippingMethod = widget.pedido.shippingMethod.isNotEmpty ? widget.pedido.shippingMethod : 'delivery';
-    _selectedPaymentMethod = ''; // Inicializa vazio, será atualizado após a API
     _pickupStore = _pickupStores.contains(widget.pedido.storeFinal) ? widget.pedido.storeFinal : _pickupStores.first;
     _storeFinal = _pickupStore;
     _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '';
 
-    print('ShippingSection initState: _shippingMethod=$_shippingMethod, _selectedPaymentMethod=$_selectedPaymentMethod, _pickupStore=$_pickupStore, _storeFinal=$_storeFinal, _pickupStoreId=$_pickupStoreId');
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      widget.onShippingMethodUpdated(_shippingMethod);
-      if (_shippingMethod == 'pickup') {
-        widget.onShippingCostUpdated(0.0);
-        widget.onStoreUpdated(_storeFinal, _pickupStoreId);
+      if (mounted) {
+        widget.onShippingMethodUpdated(_shippingMethod);
+        if (_shippingMethod == 'pickup') {
+          widget.onShippingCostUpdated(0.0);
+          widget.onStoreUpdated(_storeFinal, _pickupStoreId);
+        }
+        _fetchStoreDecision(widget.cep);
       }
-      _fetchStoreDecision(widget.cep);
     });
   }
 
@@ -77,114 +75,190 @@ class _ShippingSectionState extends State<ShippingSection> {
         _storeFinal = _pickupStore;
         _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '';
       });
-      _fetchStoreDecision(widget.cep);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _fetchStoreDecision(widget.cep);
+        }
+      });
     }
   }
 
-  void _fetchStoreDecision(String cep) async {
-    print('Fetching store decision for CEP: $cep, Shipping Method: $_shippingMethod, Pickup Store: $_pickupStore, Pedido StoreFinal: ${widget.pedido.storeFinal}');
+  Future<void> _fetchStoreDecision(String cep) async {
+    await logToFile('Fetching store decision for CEP: $cep, Shipping Method: $_shippingMethod, Pickup Store: $_pickupStore, Pedido StoreFinal: ${widget.pedido.storeFinal}');
 
     if (cep.length != 8 && _shippingMethod != 'pickup') {
-      print('CEP is incomplete, skipping store decision fetch.');
+      await logToFile('CEP is incomplete, resetting store and cost.');
       setState(() {
-        _paymentMethods = [];
-        _selectedPaymentMethod = '';
+        _storeFinal = '';
+        _pickupStoreId = '';
+        widget.pedido.availablePaymentMethods = [];
+        widget.pedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
       });
-      widget.onPaymentMethodUpdated('');
-      widget.pedido.selectedPaymentMethod = '';
       widget.onShippingCostUpdated(0.0);
+      widget.onStoreUpdated('', '');
       return;
     }
 
     try {
-      final storeDecisionResponse = await http.post(
+      final normalizedDate = widget.pedido.schedulingDate.isEmpty
+          ? DateFormat('yyyy-MM-dd').format(DateTime.now())
+          : widget.pedido.schedulingDate;
+      final requestBody = {
+        'cep': cep,
+        'shipping_method': _shippingMethod,
+        'pickup_store': _shippingMethod == 'pickup' ? _pickupStore : '',
+        'delivery_date': _shippingMethod == 'delivery' ? normalizedDate : '',
+        'pickup_date': _shippingMethod == 'pickup' ? normalizedDate : '',
+      };
+      await logToFile('Sending request to store-decision endpoint: ${jsonEncode(requestBody)}');
+      final storeResponse = await http.post(
         Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'cep': cep,
-          'shipping_method': _shippingMethod,
-          'pickup_store': _pickupStore,
-          // Removido 'scheduling_date', pois a data será gerenciada externamente
-        }),
-      );
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(requestBody),
+      ).timeout(Duration(seconds: 15), onTimeout: () {
+        throw Exception('Timeout ao buscar opções de entrega');
+      });
 
-      print('Store decision response status: ${storeDecisionResponse.statusCode}');
-      print('Store decision response body: ${storeDecisionResponse.body}');
+      await logToFile('Store decision response status: ${storeResponse.statusCode}, body: ${storeResponse.body}');
 
-      if (storeDecisionResponse.statusCode != 200) {
-        throw Exception('Erro ao buscar opções de entrega: ${storeDecisionResponse.statusCode} - ${storeDecisionResponse.body}');
-      }
+      double shippingCost = 0.0;
+      if (_shippingMethod == 'delivery') {
+        await logToFile('Fetching shipping cost for CEP: $cep');
+        final costResponse = await http.get(
+          Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
+          headers: {'Content-Type': 'application/json'},
+        ).timeout(Duration(seconds: 15), onTimeout: () {
+          throw Exception('Timeout ao buscar custo de frete');
+        });
 
-      final storeDecision = jsonDecode(storeDecisionResponse.body);
+        await logToFile('Shipping cost response status: ${costResponse.statusCode}, body: ${costResponse.body}');
 
-      setState(() {
-        _paymentMethods = (storeDecision['payment_methods'] as List<dynamic>)
-            .map((method) => method['title'].toString())
-            .toSet()
-            .toList();
-
-        print('Processed payment methods (deduplicated): $_paymentMethods');
-
-        if (_paymentMethods.isNotEmpty) {
-          _selectedPaymentMethod = _paymentMethods.contains(widget.pedido.selectedPaymentMethod)
-              ? widget.pedido.selectedPaymentMethod
-              : _paymentMethods.first;
-        } else {
-          _selectedPaymentMethod = '';
-        }
-
-        if (_shippingMethod == 'pickup') {
-          if (_pickupStore.isNotEmpty && _pickupStores.contains(_pickupStore)) {
-            _storeFinal = _pickupStore;
-            _pickupStoreId = _pickupStoreIds[_pickupStore]!;
+        if (costResponse.statusCode == 200) {
+          final costData = jsonDecode(costResponse.body);
+          if (costData['status'] == 'success' && costData['shipping_options'] != null && costData['shipping_options'].isNotEmpty) {
+            shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
           } else {
-            _pickupStore = _pickupStores.first;
-            _storeFinal = _pickupStore;
-            _pickupStoreId = _pickupStoreIds[_pickupStore]!;
+            await logToFile('Nenhuma opção de frete válida retornada para CEP: $cep');
+            shippingCost = 0.0;
           }
         } else {
-          _storeFinal = storeDecision['store_final']?.toString() ?? '';
-          _pickupStoreId = storeDecision['pickup_store_id']?.toString() ?? '';
+          throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode} - ${costResponse.body}');
         }
-
-        widget.pedido.selectedPaymentMethod = _selectedPaymentMethod;
-      });
-
-      print('Updated state - Pickup Stores: $_pickupStores, Payment Methods: $_paymentMethods, Store Final: $_storeFinal, Pickup Store ID: $_pickupStoreId, Selected Payment Method: $_selectedPaymentMethod');
-
-      widget.onStoreUpdated(_storeFinal, _pickupStoreId);
-      widget.onPaymentMethodUpdated(_selectedPaymentMethod);
-      if (_shippingMethod == 'delivery') {
-        final cost = double.tryParse(storeDecision['shipping_options']?.first['cost']?.toString() ?? '0.0') ?? 0.0;
-        widget.onShippingCostUpdated(cost);
-        widget.pedido.shippingCost = cost;
-        widget.pedido.shippingCostController.text = cost.toStringAsFixed(2);
-      } else {
-        widget.onShippingCostUpdated(0.0);
-        widget.pedido.shippingCost = 0.0;
-        widget.pedido.shippingCostController.text = '0.00';
       }
-    } catch (error) {
-      print('Error fetching store decision: $error');
+
+      if (storeResponse.statusCode == 200) {
+        try {
+          final storeDecision = jsonDecode(storeResponse.body);
+          await logToFile('Parsed JSON: ${jsonEncode(storeDecision)}');
+          setState(() {
+            if (_shippingMethod == 'pickup') {
+              _storeFinal = _pickupStore.isNotEmpty ? _pickupStore : _pickupStores.first;
+              _pickupStoreId = _pickupStoreIds[_storeFinal] ?? '86261';
+            } else {
+              _storeFinal = storeDecision['effective_store_final']?.toString() ?? storeDecision['store_final']?.toString() ?? 'Central Distribuição (Sagrada Família)';
+              _pickupStoreId = storeDecision['pickup_store_id']?.toString() ?? '86261';
+            }
+            widget.pedido.storeFinal = _storeFinal;
+            widget.pedido.pickupStoreId = _pickupStoreId;
+            final rawPaymentMethods = List<Map>.from(storeDecision['payment_methods'] ?? []);
+            widget.pedido.availablePaymentMethods = [];
+            final seenTitles = <String>{};
+            for (var m in rawPaymentMethods) {
+              final id = m['id']?.toString() ?? '';
+              final title = m['title']?.toString() ?? '';
+              if (id == 'woo_payment_on_delivery' && !seenTitles.contains('Dinheiro na Entrega')) {
+                widget.pedido.availablePaymentMethods.add({'id': 'cod', 'title': 'Dinheiro na Entrega'});
+                seenTitles.add('Dinheiro na Entrega');
+              } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') && !seenTitles.contains('Cartão de Crédito On-line')) {
+                widget.pedido.availablePaymentMethods.add({
+                  'id': storeDecision['payment_accounts']['stripe'] ?? 'stripe',
+                  'title': 'Cartão de Crédito On-line'
+                });
+                seenTitles.add('Cartão de Crédito On-line');
+              } else if (!seenTitles.contains(title)) {
+                widget.pedido.availablePaymentMethods.add({'id': id, 'title': title});
+                seenTitles.add(title);
+              }
+            }
+            final paymentAccounts = storeDecision['payment_accounts'] as Map?;
+            widget.pedido.paymentAccounts = paymentAccounts != null
+                ? paymentAccounts.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''))
+                : {'stripe': 'stripe', 'pagarme': 'central'};
+            if (!widget.pedido.availablePaymentMethods.any((m) => m['id'] == _paymentSlugFromLabel(widget.pedido.selectedPaymentMethod))) {
+              widget.pedido.selectedPaymentMethod = widget.pedido.availablePaymentMethods.isNotEmpty
+                  ? widget.pedido.availablePaymentMethods.first['title'] ?? ''
+                  : '';
+            }
+          });
+
+          await logToFile('Updated state - Store Final: $_storeFinal, Pickup Store ID: $_pickupStoreId, Payment Methods: ${widget.pedido.availablePaymentMethods}, Payment Accounts: ${widget.pedido.paymentAccounts}');
+
+          widget.onStoreUpdated(_storeFinal, _pickupStoreId);
+          if (_shippingMethod == 'delivery') {
+            widget.onShippingCostUpdated(shippingCost);
+            widget.pedido.shippingCost = shippingCost;
+            widget.pedido.shippingCostController.text = shippingCost.toStringAsFixed(2);
+          } else {
+            widget.onShippingCostUpdated(0.0);
+            widget.pedido.shippingCost = 0.0;
+            widget.pedido.shippingCostController.text = '0.00';
+          }
+        } catch (e, stackTrace) {
+          await logToFile('Erro ao parsear resposta JSON: $e, StackTrace: $stackTrace');
+          throw Exception('Erro ao parsear resposta JSON: $e');
+        }
+      } else {
+        throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode} - ${storeResponse.body}');
+      }
+    } catch (error, stackTrace) {
+      await logToFile('Error fetching store decision: $error, StackTrace: $stackTrace');
       setState(() {
-        _paymentMethods = [];
-        _selectedPaymentMethod = '';
+        _storeFinal = 'Central Distribuição (Sagrada Família)';
+        _pickupStoreId = '86261';
+        widget.pedido.storeFinal = _storeFinal;
+        widget.pedido.pickupStoreId = _pickupStoreId;
+        widget.pedido.availablePaymentMethods = [
+          {'id': 'pagarme_custom_pix', 'title': 'Pix'},
+          {'id': 'stripe', 'title': 'Cartão de Crédito On-line'},
+          {'id': 'cod', 'title': 'Dinheiro na Entrega'},
+          {'id': 'custom_729b8aa9fc227ff', 'title': 'Cartão na Entrega'},
+          {'id': 'custom_e876f567c151864', 'title': 'Vale Alimentação'},
+        ];
+        widget.pedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
       });
-      widget.onPaymentMethodUpdated('');
-      widget.pedido.selectedPaymentMethod = '';
+      widget.onStoreUpdated(_storeFinal, _pickupStoreId);
       widget.onShippingCostUpdated(0.0);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao buscar opções de entrega: $error')),
+        SnackBar(
+          content: Text('Não foi possível verificar a loja para o CEP $cep. Usando Central Distribuição como padrão.'),
+          duration: const Duration(seconds: 5),
+        ),
       );
     }
+  }
+
+  String _paymentSlugFromLabel(String uiLabel) {
+    final n = uiLabel.toLowerCase().trim();
+    if (n.contains('pix')) return 'pagarme_custom_pix';
+    if (n.contains('cartao de credito on-line') ||
+        n.contains('cartao de credito online') ||
+        n == 'cartao de credito' ||
+        n.contains('stripe')) {
+      return widget.pedido.paymentAccounts['stripe'] ?? 'stripe';
+    }
+    if (n.contains('dinheiro')) return 'cod';
+    if (n.contains('cartao na entrega') ||
+        n.contains('cartao de debito ou credito') ||
+        n.contains('maquininha') ||
+        n.contains('pos')) return 'custom_729b8aa9fc227ff';
+    if (n.contains('vale alimentacao') || n == 'va') return 'custom_e876f567c151864';
+    return 'cod';
   }
 
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    print('Building ShippingSection: _shippingMethod=$_shippingMethod, _selectedPaymentMethod=$_selectedPaymentMethod, _paymentMethods=$_paymentMethods, _pickupStore=$_pickupStore, Pedido StoreFinal=${widget.pedido.storeFinal}');
+    final primaryColor = const Color(0xFFF28C38);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -226,17 +300,17 @@ class _ShippingSectionState extends State<ShippingSection> {
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.orange.shade200),
+                  borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.orange.shade200),
+                  borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.orange.shade600, width: 2),
+                  borderSide: BorderSide(color: primaryColor, width: 2),
                 ),
-                prefixIcon: Icon(Icons.local_shipping, color: Colors.orange.shade600),
+                prefixIcon: Icon(Icons.local_shipping, color: primaryColor),
                 filled: true,
                 fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
               ),
@@ -250,9 +324,6 @@ class _ShippingSectionState extends State<ShippingSection> {
                     if (mounted) {
                       setState(() {
                         _shippingMethod = value;
-                        _paymentMethods = [];
-                        _selectedPaymentMethod = '';
-                        widget.pedido.selectedPaymentMethod = '';
                         if (_shippingMethod == 'pickup') {
                           _pickupStore = _pickupStores.contains(widget.pedido.storeFinal) ? widget.pedido.storeFinal : _pickupStores.first;
                           _storeFinal = _pickupStore;
@@ -268,7 +339,6 @@ class _ShippingSectionState extends State<ShippingSection> {
                       });
                       widget.onShippingMethodUpdated(_shippingMethod);
                       widget.onStoreUpdated(_storeFinal, _pickupStoreId);
-                      widget.onPaymentMethodUpdated(_selectedPaymentMethod);
                       _fetchStoreDecision(widget.cep);
                     }
                   });
@@ -290,17 +360,17 @@ class _ShippingSectionState extends State<ShippingSection> {
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.orange.shade200),
+                    borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.orange.shade200),
+                    borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.orange.shade600, width: 2),
+                    borderSide: BorderSide(color: primaryColor, width: 2),
                   ),
-                  prefixIcon: Icon(Icons.store, color: Colors.orange.shade600),
+                  prefixIcon: Icon(Icons.store, color: primaryColor),
                   filled: true,
                   fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
                 ),
@@ -335,75 +405,6 @@ class _ShippingSectionState extends State<ShippingSection> {
               ),
             ),
           ],
-          // Removido o InkWell para seleção de data aqui
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              'Método de Pagamento',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: isDarkMode ? Colors.white : Colors.black87,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: DropdownButtonFormField<String>(
-              value: _paymentMethods.isNotEmpty && _paymentMethods.contains(_selectedPaymentMethod)
-                  ? _selectedPaymentMethod
-                  : _paymentMethods.isNotEmpty
-                      ? _paymentMethods.first
-                      : null,
-              decoration: InputDecoration(
-                labelText: 'Método de Pagamento',
-                labelStyle: GoogleFonts.poppins(
-                  color: isDarkMode ? Colors.white70 : Colors.black54,
-                  fontWeight: FontWeight.w500,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.orange.shade200),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.orange.shade200),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.orange.shade600, width: 2),
-                ),
-                prefixIcon: Icon(Icons.payment, color: Colors.orange.shade600),
-                filled: true,
-                fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
-              ),
-              items: _paymentMethods.map((method) {
-                return DropdownMenuItem<String>(
-                  value: method,
-                  child: Text(
-                    method,
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: isDarkMode ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                );
-              }).toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() {
-                    _selectedPaymentMethod = value;
-                    print('Payment method selected: $_selectedPaymentMethod');
-                  });
-                  widget.onPaymentMethodUpdated(_selectedPaymentMethod);
-                  widget.pedido.selectedPaymentMethod = _selectedPaymentMethod;
-                }
-              },
-              validator: (value) => value == null || value.isEmpty ? 'Por favor, selecione um método de pagamento' : null,
-            ),
-          ),
-          if (_paymentMethods.isEmpty)
-            const SizedBox.shrink(),
         ],
       ),
     );

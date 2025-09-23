@@ -11,10 +11,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations: # 👈 necessário para traduzir DatePicker e demais widgets
+    sdk: flutter
   google_fonts: ^4.0.5
   shared_preferences: ^2.2.3
   http: ^1.2.1
-  intl: ^0.17.0
+  intl: ^0.20.2
   pdf: ^3.10.1
   path_provider: ^2.0.15
   open_file: ^3.2.1
@@ -29,6 +31,7 @@ dependencies:
   flutter_map: ^7.0.1  # Última versão estável
   latlong2: ^0.9.0  # Para coordenadas
   # flutter_map_tile_caching: ^13.0.0  # Opcional, para caching offline
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

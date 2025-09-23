@@ -1,19 +1,30 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:intl/intl.dart';
 
 class CriarPedidoService {
   static const String _baseUrl = 'https://aogosto.com.br/delivery/';
   static const String _proxyUrl = 'https://aogosto.com.br/afonsos/proxy/buscar-cliente-por-telefone.php';
+  static const String _proxyCheckoutUrl = 'https://aogosto.com.br/proxy/checkout-flutter.php';
   static const String _consumerKey = 'ck_5156e2360f442f2585c8c9a761ef084b710e811f';
   static const String _consumerSecret = 'cs_c62f9d8f6c08a1d14917e2a6db5dccce2815de8c';
 
+  Future<void> logToFile(String message) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/app_logs.txt');
+      await file.writeAsString('${DateTime.now()} - $message\n', mode: FileMode.append);
+    } catch (e) {
+      print('Falha ao escrever log: $e');
+    }
+  }
+
   Future<Map<String, dynamic>?> fetchCustomerByPhone(String phone) async {
     final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
-    print('Telefone original limpo: $cleanPhone');
-
+    await logToFile('Buscando cliente com telefone: $cleanPhone');
     String searchPhone = cleanPhone.startsWith('55') ? cleanPhone.substring(2) : cleanPhone;
-    print('Telefone para busca (sem código de país): $searchPhone');
-
     try {
       final response = await http.post(
         Uri.parse(_proxyUrl),
@@ -23,13 +34,10 @@ class CriarPedidoService {
         },
         body: jsonEncode({'phone': searchPhone}),
       );
-
-      print('Status da resposta: ${response.statusCode}');
-      print('Corpo da resposta: ${response.body}');
-
+      await logToFile('Resposta fetchCustomerByPhone: status=${response.statusCode}, body=${response.body}');
       if (response.statusCode == 200) {
         final customer = jsonDecode(response.body);
-        print('Cliente encontrado: ID=${customer['id']}, Telefone no banco: ${customer['billing']['phone']}, Último pedido ID: ${customer['last_order_id']}');
+        await logToFile('Cliente encontrado: ID=${customer['id']}, Telefone no banco: ${customer['billing']['phone']}, Último pedido ID: ${customer['last_order_id']}');
         return customer;
       } else if (response.statusCode == 404) {
         return null;
@@ -37,7 +45,7 @@ class CriarPedidoService {
         throw Exception('Erro ao buscar cliente: ${response.statusCode} - ${response.body}');
       }
     } catch (error) {
-      print('Erro ao buscar cliente: $error');
+      await logToFile('Erro ao buscar cliente: $error');
       throw Exception('Erro ao buscar cliente: $error');
     }
   }
@@ -50,24 +58,24 @@ class CriarPedidoService {
           'Authorization': 'Basic ${base64Encode(utf8.encode('$_consumerKey:$_consumerSecret'))}',
         },
       );
-
       if (response.statusCode == 200) {
         final List<dynamic> products = jsonDecode(response.body);
-        return products.map((product) {
-          return {
-            'id': product['id'],
-            'name': product['name'],
-            'price': double.tryParse(product['price']) ?? 0.0,
-            'image': product['images'].isNotEmpty ? product['images'][0]['src'] : null,
-            'type': product['type'],
-            'variations': product['variations'],
-            'stock_status': product['stock_status'] ?? 'outofstock',
-          };
-        }).toList();
+        final result = products.map((product) => {
+              'id': product['id'],
+              'name': product['name'],
+              'price': double.tryParse(product['price']) ?? 0.0,
+              'image': product['images'].isNotEmpty ? product['images'][0]['src'] : null,
+              'type': product['type'],
+              'variations': product['variations'],
+              'stock_status': product['stock_status'] ?? 'outofstock',
+            }).toList();
+        await logToFile('Produtos buscados: $result');
+        return result;
       } else {
-        throw Exception('Erro ao buscar produtos: ${response.body}');
+        throw Exception('Erro ao buscar produtos: ${response.statusCode} - ${response.body}');
       }
     } catch (error) {
+      await logToFile('Erro ao buscar produtos: $error');
       throw Exception('Erro ao buscar produtos: $error');
     }
   }
@@ -80,25 +88,23 @@ class CriarPedidoService {
           'Authorization': 'Basic ${base64Encode(utf8.encode('$_consumerKey:$_consumerSecret'))}',
         },
       );
-
-      print('Buscando atributos para o produto ID $productId');
-      print('Status da resposta: ${response.statusCode}');
-      print('Corpo da resposta: ${response.body}');
-
+      await logToFile('Buscando atributos para produto ID $productId: status=${response.statusCode}, body=${response.body}');
       if (response.statusCode == 200) {
         final product = jsonDecode(response.body);
         final attributes = product['attributes'] as List<dynamic>? ?? [];
-        return attributes.map((attr) {
+        final result = attributes.map((attr) {
           return {
             'name': attr['name'],
             'options': attr['options'] as List<dynamic>,
           };
         }).toList();
+        await logToFile('Atributos encontrados: $result');
+        return result;
       } else {
-        throw Exception('Erro ao buscar atributos do produto: ${response.body}');
+        throw Exception('Erro ao buscar atributos do produto: ${response.statusCode} - ${response.body}');
       }
     } catch (error) {
-      print('Erro ao buscar atributos do produto: $error');
+      await logToFile('Erro ao buscar atributos do produto: $error');
       throw Exception('Erro ao buscar atributos do produto: $error');
     }
   }
@@ -111,14 +117,10 @@ class CriarPedidoService {
           'Authorization': 'Basic ${base64Encode(utf8.encode('$_consumerKey:$_consumerSecret'))}',
         },
       );
-
-      print('Buscando variações para o produto ID $productId');
-      print('Status da resposta: ${response.statusCode}');
-      print('Corpo da resposta: ${response.body}');
-
+      await logToFile('Buscando variações para produto ID $productId: status=${response.statusCode}, body=${response.body}');
       if (response.statusCode == 200) {
         final List<dynamic> variations = jsonDecode(response.body);
-        return variations.map((variation) {
+        final result = variations.map((variation) {
           return {
             'id': variation['id'],
             'attributes': variation['attributes'],
@@ -126,11 +128,13 @@ class CriarPedidoService {
             'stock_status': variation['stock_status'] ?? 'outofstock',
           };
         }).toList();
+        await logToFile('Variações encontradas: $result');
+        return result;
       } else {
-        throw Exception('Erro ao buscar variações: ${response.body}');
+        throw Exception('Erro ao buscar variações: ${response.statusCode} - ${response.body}');
       }
     } catch (error) {
-      print('Erro ao buscar variações: $error');
+      await logToFile('Erro ao buscar variações: $error');
       throw Exception('Erro ao buscar variações: $error');
     }
   }
@@ -139,10 +143,12 @@ class CriarPedidoService {
     required String cep,
     required String shippingMethod,
     String pickupStore = '',
+    String deliveryDate = '',
+    String pickupDate = '',
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$_baseUrl/wp-json/custom/v1/store-decision'),
+        Uri.parse(_proxyCheckoutUrl),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -150,20 +156,18 @@ class CriarPedidoService {
           'cep': cep,
           'shipping_method': shippingMethod,
           'pickup_store': pickupStore,
+          'delivery_date': deliveryDate,
+          'pickup_date': pickupDate,
         }),
       );
-
-      print('Buscando decisão da loja para CEP $cep e método $shippingMethod');
-      print('Status da resposta: ${response.statusCode}');
-      print('Corpo da resposta: ${response.body}');
-
+      await logToFile('Buscando decisão da loja: cep=$cep, shipping_method=$shippingMethod, pickup_store=$pickupStore, delivery_date=$deliveryDate, pickup_date=$pickupDate, status=${response.statusCode}, body=${response.body}');
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       } else {
-        throw Exception('Erro ao determinar a loja: ${response.body}');
+        throw Exception('Erro ao determinar a loja: ${response.statusCode} - ${response.body}');
       }
     } catch (error) {
-      print('Erro ao determinar a loja: $error');
+      await logToFile('Erro ao determinar a loja: $error');
       throw Exception('Erro ao determinar a loja: $error');
     }
   }
@@ -174,14 +178,11 @@ class CriarPedidoService {
     required double shippingCost,
   }) async {
     try {
-      print('Produtos enviados para validação do cupom: ${jsonEncode(products)}');
-
       final validLineItems = products.map((product) {
         final productId = product['id'];
         final quantity = product['quantity'] ?? 1;
         final price = product['price'] ?? 0.0;
         final variationId = product['variation_id'] != null && product['variation_id'] != 0 ? product['variation_id'] : null;
-
         if (productId == null || productId is! int || productId <= 0) {
           throw Exception('ID do produto inválido: $productId');
         }
@@ -194,21 +195,17 @@ class CriarPedidoService {
         if (variationId != null && (variationId is! int || variationId <= 0)) {
           throw Exception('ID da variação inválido para o produto ID $productId: $variationId');
         }
-
         final lineItem = <String, dynamic>{
           'product_id': productId,
           'quantity': quantity,
           'subtotal': (price * quantity).toString(),
           'total': (price * quantity).toString(),
         };
-
         if (variationId != null) {
           lineItem['variation_id'] = variationId;
         }
-
         return lineItem;
       }).toList();
-
       final payload = {
         'line_items': validLineItems,
         'shipping_lines': [
@@ -224,9 +221,7 @@ class CriarPedidoService {
           }
         ],
       };
-
-      print('Payload enviado para validar cupom: ${jsonEncode(payload)}');
-
+      await logToFile('Validando cupom: payload=${jsonEncode(payload)}');
       final response = await http.post(
         Uri.parse('$_baseUrl/wp-json/wc/v3/orders'),
         headers: {
@@ -235,24 +230,19 @@ class CriarPedidoService {
         },
         body: jsonEncode(payload),
       );
-
-      print('Resposta da API ao validar cupom: Status ${response.statusCode}, Body ${response.body}');
-
+      await logToFile('Resposta validação cupom: status=${response.statusCode}, body=${response.body}');
       if (response.statusCode == 201) {
         final order = jsonDecode(response.body);
         final subtotal = products.fold<double>(0.0, (sum, product) => sum + ((product['price'] ?? 0.0) * (product['quantity'] ?? 1))) + shippingCost;
         final totalWithDiscount = double.tryParse(order['total']) ?? subtotal;
         final discount = subtotal - totalWithDiscount;
-
         await http.delete(
           Uri.parse('$_baseUrl/wp-json/wc/v3/orders/${order['id']}'),
           headers: {
             'Authorization': 'Basic ${base64Encode(utf8.encode('$_consumerKey:$_consumerSecret'))}',
           },
         );
-
-        print('Cupom validado: subtotal=$subtotal, totalWithDiscount=$totalWithDiscount, discount=$discount');
-
+        await logToFile('Cupom validado: subtotal=$subtotal, totalWithDiscount=$totalWithDiscount, discount=$discount');
         return {
           'is_valid': true,
           'discount_amount': discount,
@@ -266,7 +256,7 @@ class CriarPedidoService {
         };
       }
     } catch (error) {
-      print('Erro ao validar cupom: $error');
+      await logToFile('Erro ao validar cupom: $error');
       return {
         'is_valid': false,
         'error_message': 'Erro ao validar o cupom: $error',
@@ -275,253 +265,170 @@ class CriarPedidoService {
   }
 
   Future<Map<String, dynamic>> createOrder({
-  required String customerName,
-  required String customerEmail,
-  required String customerPhone,
-  required String billingCompany,
-  required List<Map<String, dynamic>> products,
-  required String shippingMethod,
-  required String storeFinal,
-  required String pickupStoreId,
-  required String billingPostcode,
-  required String billingAddress1,
-  required String billingNumber,
-  required String billingAddress2,
-  required String billingNeighborhood,
-  required String billingCity,
-  required double shippingCost,
-  required String paymentMethod,
-  required String customerNotes,
-  required String schedulingDate,
-  required String schedulingTime,
-  required String couponCode,
-}) async {
-  try {
-    // Validação do shippingMethod
-    if (shippingMethod != 'delivery' && shippingMethod != 'pickup') {
-      throw Exception('Método de entrega inválido: $shippingMethod. Deve ser "delivery" ou "pickup".');
-    }
-
-    // Forçar shippingCost a 0.0 para pickup
-    final effectiveShippingCost = shippingMethod == 'pickup' ? 0.0 : shippingCost;
-
-    // Mapeamento explícito dos métodos de pagamento com depuração
-    String mappedPaymentMethod;
-    String paymentMethodTitle;
-    print('Received paymentMethod in createOrder: $paymentMethod'); // Log do valor recebido
-   switch (paymentMethod) {
-  // === PIX ===
-  case 'Pix':
-  case 'pagarme_custom_pix':
-    mappedPaymentMethod = 'pagarme_custom_pix';
-    paymentMethodTitle = 'Pix On-line (Aprovação Imediata)';
-    break;
-
-  // === Cartão de Crédito Online (Stripe) ===
-  case 'Cartão de Crédito On-line':
-  case 'stripe':
-  case 'stripe_cc':
-    mappedPaymentMethod = 'stripe';
-    paymentMethodTitle = 'Cartão de Crédito On-line';
-    break;
-
-  // === Dinheiro ===
-  case 'Dinheiro':
-  case 'woo_payment_on_delivery':
-  case 'cod':
-    mappedPaymentMethod = 'woo_payment_on_delivery';
-    paymentMethodTitle = 'Pagamento no Dinheiro';
-    break;
-
-  // === Cartão na Entrega ===
-  case 'Cartão na Entrega':
-  case 'custom_729b8aa9fc227ff':
-  case 'cartão_na_entrega':
-    mappedPaymentMethod = 'custom_729b8aa9fc227ff';
-    paymentMethodTitle = 'Cartão na Entrega';
-    break;
-
-  // === Vale Alimentação ===
-  case 'Vale Alimentação':
-  case 'custom_e876f567c151864':
-  case 'voucher':
-    mappedPaymentMethod = 'custom_e876f567c151864';
-    paymentMethodTitle = 'Vale Alimentação';
-    break;
-
-  default:
-    throw Exception('Método de pagamento inválido: $paymentMethod');
-}
-
-
-    print('Mapping payment method: $paymentMethod -> mappedPaymentMethod: $mappedPaymentMethod, paymentMethodTitle: $paymentMethodTitle'); // Log do mapeamento
-
-    // Define o status do pedido com base no método de pagamento (online = pendente)
-String orderStatus;
-if (mappedPaymentMethod == 'pagarme_custom_pix' || mappedPaymentMethod == 'stripe') {
-  orderStatus = 'pending'; // aguardando pagamento
-} else {
-  orderStatus = 'processing'; // métodos presenciais
-}
-
-    // Limpa e normaliza o customerName
-    final cleanedCustomerName = customerName.trim().replaceAll(RegExp(r'\s+'), ' ');
-    final nameParts = cleanedCustomerName.split(' ').where((part) => part.isNotEmpty).toList();
-    final firstName = nameParts.isNotEmpty ? nameParts[0] : '';
-    final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
-
-    // Valida line_items
-    final lineItems = products.map((product) {
-      final productId = product['id'];
-      final quantity = product['quantity'] ?? 1;
-      final price = product['price'] ?? 0.0;
-      final variationId = product['variation_id'] != null && product['variation_id'] != 0 ? product['variation_id'] : null;
-
-      if (productId == null || productId is! int || productId <= 0) {
-        throw Exception('ID do produto inválido: $productId');
+    required String customerName,
+    required String customerEmail,
+    required String customerPhone,
+    required String billingCompany,
+    required List<Map<String, dynamic>> products,
+    required String shippingMethod,
+    required String storeFinal,
+    required String pickupStoreId,
+    required String billingPostcode,
+    required String billingAddress1,
+    required String billingNumber,
+    required String billingAddress2,
+    required String billingNeighborhood,
+    required String billingCity,
+    required double shippingCost,
+    required String paymentMethod,
+    required String customerNotes,
+    required String schedulingDate,
+    required String schedulingTime,
+    required String couponCode,
+    required String paymentAccountStripe,
+    required String paymentAccountPagarme,
+  }) async {
+    try {
+      // Validação do shippingMethod
+      if (shippingMethod != 'delivery' && shippingMethod != 'pickup') {
+        throw Exception('Método de entrega inválido: $shippingMethod. Deve ser "delivery" ou "pickup".');
       }
-      if (quantity is! int || quantity <= 0) {
-        throw Exception('Quantidade inválida para o produto ID $productId: $quantity');
-      }
-      if (price is! num || price <= 0) {
-        throw Exception('Preço inválido para o produto ID $productId: $price');
-      }
-
-      final lineItem = {
-        'product_id': productId,
-        'name': product['name'],
-        'quantity': quantity,
-        'subtotal': (price * quantity).toStringAsFixed(2),
-        'total': (price * quantity).toStringAsFixed(2),
-      };
-
-      if (variationId != null) {
-        lineItem['variation_id'] = variationId;
-        lineItem['meta_data'] = (product['variation_attributes'] as List<dynamic>?)?.map((attr) {
-          return {
-            'key': attr['name'],
-            'value': attr['option'],
-          };
-        })?.toList() ?? [];
-      }
-
-      return lineItem;
-    }).toList();
-
-    final effectiveEmail = customerEmail.isNotEmpty ? customerEmail : 'orders@aogosto.com.br';
-
-    final payload = {
-      'payment_method': mappedPaymentMethod,
-      'payment_method_title': paymentMethodTitle,
-      'billing': {
-        'first_name': firstName,
-        'last_name': lastName,
-        'company': billingCompany,
-        'postcode': billingPostcode,
-        'address_1': billingAddress1,
-        'address_2': billingAddress2,
-        'city': billingCity,
-        'state': 'MG',
-        'country': 'BR',
-        'email': effectiveEmail,
-        'phone': customerPhone,
-      },
-      'shipping': {
-        'first_name': firstName,
-        'last_name': lastName,
-        'postcode': billingPostcode,
-        'address_1': billingAddress1,
-        'number': billingNumber,
-        'address_2': billingAddress2,
-        'neighborhood': billingNeighborhood,
-        'city': billingCity,
-        'state': 'MG',
-        'country': 'BR',
-      },
-      'line_items': lineItems,
-      'shipping_lines': [
-        {
-          'method_id': shippingMethod == 'delivery' ? 'flat_rate' : 'local_pickup',
-          'method_title': shippingMethod == 'delivery' ? 'Motoboy' : 'Retirada na Unidade',
-          'total': effectiveShippingCost.toStringAsFixed(2),
+      // Forçar shippingCost a 0.0 para pickup
+      final effectiveShippingCost = shippingMethod == 'pickup' ? 0.0 : shippingCost;
+      // Valida line_items
+      final lineItems = products.map((product) {
+        final productId = product['id'];
+        final quantity = product['quantity'] ?? 1;
+        final price = product['price'] ?? 0.0;
+        final variationId = product['variation_id'] != null && product['variation_id'] != 0 ? product['variation_id'] : null;
+        if (productId == null || productId is! int || productId <= 0) {
+          throw Exception('ID do produto inválido: $productId');
         }
-      ],
-      'meta_data': [
-        {
-          'key': '_store_final',
-          'value': storeFinal,
+        if (quantity is! int || quantity <= 0) {
+          throw Exception('Quantidade inválida para o produto ID $productId: $quantity');
+        }
+        if (price is! num || price <= 0) {
+          throw Exception('Preço inválido para o produto ID $productId: $price');
+        }
+        final lineItem = {
+          'product_id': productId,
+          'name': product['name'],
+          'quantity': quantity,
+          'subtotal': (price * quantity).toStringAsFixed(2),
+          'total': (price * quantity).toStringAsFixed(2),
+        };
+        if (variationId != null) {
+          lineItem['variation_id'] = variationId;
+          lineItem['meta_data'] = (product['variation_attributes'] as List<dynamic>?)?.map((attr) {
+            return {
+              'key': attr['name'],
+              'value': attr['option'],
+            };
+          })?.toList() ?? [];
+        }
+        return lineItem;
+      }).toList();
+      final effectiveEmail = customerEmail.isNotEmpty ? customerEmail : 'orders@aogosto.com.br';
+      final cleanedCustomerName = customerName.trim().replaceAll(RegExp(r'\s+'), ' ');
+      final nameParts = cleanedCustomerName.split(' ').where((part) => part.isNotEmpty).toList();
+      final firstName = nameParts.isNotEmpty ? nameParts[0] : '';
+      final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+      // Define status do pedido com base no método de pagamento
+      final orderStatus = (paymentMethod == 'pagarme_custom_pix' ||
+              paymentMethod == 'stripe' ||
+              paymentMethod == 'stripe_cc' ||
+              paymentMethod == 'eh_stripe_pay')
+          ? 'pending'
+          : 'processing';
+      final payload = {
+        'payment_method': paymentMethod,
+        'payment_method_title': {
+          'pagarme_custom_pix': 'Pix On-line (Aprovação Imediata)',
+          'stripe': 'Cartão de Crédito On-line',
+          'stripe_cc': 'Cartão de Crédito On-line',
+          'eh_stripe_pay': 'Cartão de Crédito On-line',
+          'woo_payment_on_delivery': 'Pagamento no Dinheiro',
+          'custom_729b8aa9fc227ff': 'Cartão na Entrega',
+          'custom_e876f567c151864': 'Vale Alimentação',
+        }[paymentMethod] ?? 'Método Desconhecido',
+        'billing': {
+          'first_name': firstName,
+          'last_name': lastName,
+          'company': billingCompany,
+          'postcode': billingPostcode,
+          'address_1': billingAddress1,
+          'address_2': billingAddress2,
+          'city': billingCity,
+          'state': 'MG',
+          'country': 'BR',
+          'email': effectiveEmail,
+          'phone': customerPhone,
         },
-        {
-          'key': '_billing_number',
-          'value': billingNumber,
+        'shipping': {
+          'first_name': firstName,
+          'last_name': lastName,
+          'postcode': billingPostcode,
+          'address_1': billingAddress1,
+          'number': billingNumber,
+          'address_2': billingAddress2,
+          'neighborhood': billingNeighborhood,
+          'city': billingCity,
+          'state': 'MG',
+          'country': 'BR',
         },
-        {
-          'key': '_billing_neighborhood',
-          'value': billingNeighborhood,
-        },
-        if (shippingMethod == 'pickup') ...[
+        'line_items': lineItems,
+        'shipping_lines': [
           {
-            'key': '_shipping_pickup_stores',
-            'value': storeFinal,
-          },
-          {
-            'key': '_shipping_pickup_store_id',
-            'value': pickupStoreId,
-          },
-          {
-            'key': 'pickup_date',
-            'value': schedulingDate,
-          },
-          {
-            'key': 'pickup_time',
-            'value': schedulingTime,
-          },
+            'method_id': shippingMethod == 'delivery' ? 'flat_rate' : 'local_pickup',
+            'method_title': shippingMethod == 'delivery' ? 'Motoboy' : 'Retirada na Unidade',
+            'total': effectiveShippingCost.toStringAsFixed(2),
+          }
         ],
-        if (shippingMethod == 'delivery') ...[
-          {
-            'key': 'delivery_date',
-            'value': schedulingDate,
-          },
-          {
-            'key': 'delivery_time',
-            'value': schedulingTime,
-          },
+        'meta_data': [
+          {'key': '_store_final', 'value': storeFinal},
+          {'key': '_effective_store_final', 'value': storeFinal},
+          {'key': '_billing_number', 'value': billingNumber},
+          {'key': '_billing_neighborhood', 'value': billingNeighborhood},
+          {'key': '_payment_account_stripe', 'value': paymentAccountStripe},
+          {'key': '_payment_account_pagarme', 'value': paymentAccountPagarme},
+          {'key': '_is_future_date', 'value': schedulingDate != DateFormat('yyyy-MM-dd').format(DateTime.now()) ? 'yes' : 'no'},
+          if (shippingMethod == 'pickup') ...[
+            {'key': '_shipping_pickup_stores', 'value': storeFinal},
+            {'key': '_shipping_pickup_store_id', 'value': pickupStoreId},
+            {'key': 'pickup_date', 'value': schedulingDate},
+            {'key': 'pickup_time', 'value': schedulingTime},
+          ],
+          if (shippingMethod == 'delivery') ...[
+            {'key': 'delivery_date', 'value': schedulingDate},
+            {'key': 'delivery_time', 'value': schedulingTime},
+          ],
+          {'key': 'delivery_type', 'value': shippingMethod},
         ],
-        {
-          'key': 'delivery_type',
-          'value': shippingMethod,
+        'customer_note': customerNotes.isNotEmpty ? customerNotes : null,
+        'status': orderStatus,
+        if (couponCode.isNotEmpty)
+          'coupon_lines': [
+            {'code': couponCode},
+          ],
+      };
+      await logToFile('Criando pedido: payload=${jsonEncode(payload)}');
+      final response = await http.post(
+        Uri.parse('$_baseUrl/wp-json/wc/v3/orders'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Basic ${base64Encode(utf8.encode('$_consumerKey:$_consumerSecret'))}',
         },
-      ],
-      'customer_note': customerNotes.isNotEmpty ? customerNotes : null,
-      'status': orderStatus,
-      if (couponCode.isNotEmpty)
-        'coupon_lines': [
-          {
-            'code': couponCode,
-          },
-        ],
-    };
-
-    print('Payload final para criar pedido: ${jsonEncode(payload)}');
-
-    final response = await http.post(
-      Uri.parse('$_baseUrl/wp-json/wc/v3/orders'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Basic ${base64Encode(utf8.encode('$_consumerKey:$_consumerSecret'))}',
-      },
-      body: jsonEncode(payload),
-    );
-
-    print('Resposta da API ao criar pedido: Status ${response.statusCode}, Body ${response.body}');
-
-    if (response.statusCode == 201) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Erro ao criar pedido: ${response.statusCode} - ${response.body}');
+        body: jsonEncode(payload),
+      );
+      await logToFile('Resposta criação pedido: status=${response.statusCode}, body=${response.body}');
+      if (response.statusCode == 201) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception('Erro ao criar pedido: ${response.statusCode} - ${response.body}');
+      }
+    } catch (error) {
+      await logToFile('Erro ao criar pedido: $error');
+      throw Exception('Erro ao criar pedido: $error');
     }
-  } catch (error) {
-    print('Erro ao criar pedido: $error');
-    throw Exception('Erro ao criar pedido: $error');
   }
-}}
+}

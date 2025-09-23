@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
+import '../utils/log_utils.dart'; // Importar log_utils para usar logToFile
 
 class CustomerSection extends StatefulWidget {
   final TextEditingController phoneController;
@@ -12,7 +13,7 @@ class CustomerSection extends StatefulWidget {
   final Function(String) onEmailChanged;
   final String selectedVendedor;
   final Function(String?) onVendedorChanged;
-  final String? Function(String?)? validator; // Tornar anulável
+  final String? Function(String?)? validator;
   final bool isLoading;
 
   const CustomerSection({
@@ -26,7 +27,7 @@ class CustomerSection extends StatefulWidget {
     required this.onEmailChanged,
     required this.selectedVendedor,
     required this.onVendedorChanged,
-    this.validator, // Permitir null
+    this.validator,
     required this.isLoading,
   }) : super(key: key);
 
@@ -46,8 +47,8 @@ class _CustomerSectionState extends State<CustomerSection> {
   void initState() {
     super.initState();
     widget.phoneController.addListener(() {
-      debugPrint('phoneController changed: ${widget.phoneController.text}');
-      setState(() {}); // Rebuild on text change
+      // Removido setState para evitar reconstruções desnecessárias
+      logToFile('phoneController changed: ${widget.phoneController.text}');
     });
   }
 
@@ -63,15 +64,13 @@ class _CustomerSectionState extends State<CustomerSection> {
     final cleanedPhone = widget.phoneController.text.replaceAll(RegExp(r'\D'), '').trim();
     final isPhoneValid = cleanedPhone.length == 11;
 
-    debugPrint('Phone: ${widget.phoneController.text}, Cleaned: $cleanedPhone, isPhoneValid: $isPhoneValid');
+    // Mover o log para logToFile em vez de debugPrint
+    logToFile('Phone: ${widget.phoneController.text}, Cleaned: $cleanedPhone, isPhoneValid: $isPhoneValid');
 
-    // Lista de vendedores atualizada, substituindo "Letícia" por "Cássio Vinicius" (sem duplicatas)
     final List<String> vendedores = ['Alline', 'Cássio Vinicius', 'Maria Eduarda'];
-
-    // Garantir que o valor selecionado seja válido, usando um valor padrão se necessário
     final String dropdownValue = vendedores.contains(widget.selectedVendedor)
         ? widget.selectedVendedor
-        : vendedores.first; // Valor padrão é o primeiro item
+        : vendedores.first;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -137,7 +136,7 @@ class _CustomerSectionState extends State<CustomerSection> {
                   keyboardType: TextInputType.phone,
                   inputFormatters: [phoneMaskFormatter],
                   onChanged: widget.onPhoneChanged,
-                  validator: widget.validator, // Usar o validador passado (ou null)
+                  validator: widget.validator,
                 ),
               ),
               const SizedBox(width: 12),
@@ -145,7 +144,10 @@ class _CustomerSectionState extends State<CustomerSection> {
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOut,
                 child: ElevatedButton(
-                  onPressed: (widget.isLoading || !isPhoneValid) ? null : widget.onFetchCustomer,
+                  onPressed: (widget.isLoading || !isPhoneValid) ? null : () {
+                    logToFile('Botão Buscar Cliente clicado');
+                    widget.onFetchCustomer();
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryColor,
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -220,7 +222,7 @@ class _CustomerSectionState extends State<CustomerSection> {
               );
             }).toList(),
             onChanged: widget.onVendedorChanged,
-            validator: null, // Validações movidas para _createOrder
+            validator: null,
           ),
           const SizedBox(height: 20),
           TextFormField(
@@ -259,7 +261,7 @@ class _CustomerSectionState extends State<CustomerSection> {
               color: isDarkMode ? Colors.white : Colors.black87,
             ),
             onChanged: widget.onNameChanged,
-            validator: null, // Validações movidas para _createOrder
+            validator: null,
           ),
           const SizedBox(height: 20),
           TextFormField(
@@ -299,7 +301,7 @@ class _CustomerSectionState extends State<CustomerSection> {
             ),
             keyboardType: TextInputType.emailAddress,
             onChanged: widget.onEmailChanged,
-            validator: null, // E-mail é opcional, sem validação
+            validator: null,
           ),
         ],
       ),
