@@ -38,6 +38,7 @@ class SummarySection extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Por favor, insira o número de telefone do cliente.')),
       );
+      await logToFile('Erro: phoneNumber is empty in _sendPaymentMessage');
       return;
     }
 
@@ -150,84 +151,62 @@ class SummarySection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Resumo do Pedido',
-            style: GoogleFonts.poppins(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: isDarkMode ? Colors.white : Colors.black87,
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              'Resumo do Pedido',
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: isDarkMode ? Colors.white : Colors.black87,
+              ),
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Loja Selecionada',
-                style: GoogleFonts.poppins(fontSize: 16, color: isDarkMode ? Colors.white70 : Colors.black54),
-              ),
-              Text(
-                pedido.storeFinal.isNotEmpty ? pedido.storeFinal : 'Aguardando cálculo',
-                style: GoogleFonts.poppins(fontSize: 16, color: isDarkMode ? Colors.white : Colors.black87),
-              ),
-            ],
+          const SizedBox(height: 12),
+          _buildSummaryRow(
+            context,
+            primaryColor: primaryColor,
+            icon: Icons.location_on,
+            label: 'Loja Selecionada',
+            value: pedido.storeFinal.isNotEmpty ? '📍 ${pedido.storeFinal}' : 'Aguardando cálculo',
+            isDarkMode: isDarkMode,
+            valueStyle: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Total dos Produtos',
-                style: GoogleFonts.poppins(fontSize: 16, color: isDarkMode ? Colors.white70 : Colors.black54),
-              ),
-              Text(
-                'R\$ ${totalOriginal.toStringAsFixed(2)}',
-                style: GoogleFonts.poppins(fontSize: 16, color: isDarkMode ? Colors.white : Colors.black87),
-              ),
-            ],
+          _buildSummaryRow(
+            context,
+            primaryColor: primaryColor,
+            label: 'Total dos Produtos',
+            value: 'R\$ ${totalOriginal.toStringAsFixed(2)}',
+            isDarkMode: isDarkMode,
           ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Custo de Envio',
-                style: GoogleFonts.poppins(fontSize: 16, color: isDarkMode ? Colors.white70 : Colors.black54),
-              ),
-              Text(
-                'R\$ ${pedido.shippingCost.toStringAsFixed(2)}',
-                style: GoogleFonts.poppins(fontSize: 16, color: isDarkMode ? Colors.white : Colors.black87),
-              ),
-            ],
+          _buildSummaryRow(
+            context,
+            primaryColor: primaryColor,
+            label: 'Custo de Envio',
+            value: 'R\$ ${pedido.shippingCost.toStringAsFixed(2)}',
+            isDarkMode: isDarkMode,
           ),
           if (isCouponValid) ...[
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Desconto ($couponCode)',
-                  style: GoogleFonts.poppins(fontSize: 16, color: successColor),
-                ),
-                Text(
-                  '- R\$ ${discountAmount.toStringAsFixed(2)}',
-                  style: GoogleFonts.poppins(fontSize: 16, color: successColor),
-                ),
-              ],
+            _buildSummaryRow(
+              context,
+              primaryColor: primaryColor,
+              icon: Icons.discount,
+              label: 'Desconto ($couponCode)',
+              value: '- R\$ ${discountAmount.toStringAsFixed(2)}',
+              isDarkMode: isDarkMode,
+              valueStyle: GoogleFonts.poppins(fontSize: 16, color: successColor, fontWeight: FontWeight.w600),
             ),
           ],
           const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Total com Desconto',
-                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: isDarkMode ? Colors.white : Colors.black87),
-              ),
-              Text(
-                'R\$ ${totalWithDiscount.toStringAsFixed(2)}',
-                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: isDarkMode ? Colors.white : Colors.black87),
-              ),
-            ],
+          _buildSummaryRow(
+            context,
+            primaryColor: primaryColor,
+            label: 'Total com Desconto',
+            value: 'R\$ ${totalWithDiscount.toStringAsFixed(2)}',
+            isDarkMode: isDarkMode,
+            valueStyle: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
@@ -256,7 +235,7 @@ class SummarySection extends StatelessWidget {
               prefixIcon: Icon(Icons.payment, color: primaryColor),
               filled: true,
               fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
-              enabled: pedido.schedulingDate.isNotEmpty && pedido.schedulingTime.isNotEmpty,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
             items: pedido.availablePaymentMethods.map((method) {
               return DropdownMenuItem<String>(
@@ -285,13 +264,28 @@ class SummarySection extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: isLoading || pedido.selectedPaymentMethod.isEmpty ? null : onCreateOrder,
+              onPressed: isLoading || pedido.selectedPaymentMethod.isEmpty
+                  ? null
+                  : () async {
+                      await onCreateOrder();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Criando pedido...',
+                            style: GoogleFonts.poppins(fontSize: 14, color: Colors.white),
+                          ),
+                          backgroundColor: primaryColor,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryColor,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 2,
+                elevation: 3,
+                shadowColor: Colors.black.withOpacity(0.2),
               ),
               child: isLoading
                   ? const SizedBox(
@@ -307,127 +301,191 @@ class SummarySection extends StatelessWidget {
           ),
           if (resultMessage != null) ...[
             const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: resultMessage!.contains('Erro') ? Colors.red.shade50 : Colors.green.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: resultMessage!.contains('Erro') ? Colors.red.shade200 : Colors.green.shade200),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    resultMessage!.contains('Erro') ? Icons.error : Icons.check_circle,
-                    color: resultMessage!.contains('Erro') ? Colors.red.shade600 : successColor,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      resultMessage!,
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: resultMessage!.contains('Erro') ? Colors.red.shade800 : Colors.green.shade800,
+            AnimatedOpacity(
+              opacity: resultMessage!.isNotEmpty ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 300),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: resultMessage!.contains('Erro') ? Colors.red.shade50 : Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: resultMessage!.contains('Erro') ? Colors.red.shade200 : Colors.green.shade200),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      resultMessage!.contains('Erro') ? Icons.error : Icons.check_circle,
+                      color: resultMessage!.contains('Erro') ? Colors.red.shade600 : successColor,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        resultMessage!,
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: resultMessage!.contains('Erro') ? Colors.red.shade800 : Colors.green.shade800,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
           if (paymentInstructions != null && paymentText != null && paymentText.isNotEmpty) ...[
             const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.shade200),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isPix ? 'Pagamento via Pix' : 'Pagamento via Cartão de Crédito',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: successColor,
+            AnimatedOpacity(
+              opacity: paymentText!.isNotEmpty ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 300),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green.shade200),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    isPix ? 'Código Pix:' : 'Link de Pagamento:',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: isDarkMode ? Colors.white70 : Colors.black54,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          paymentText,
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          isPix ? Icons.qr_code : Icons.credit_card,
+                          color: successColor,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          isPix ? 'Pagamento via Pix' : 'Pagamento via Cartão de Crédito',
                           style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: isDarkMode ? Colors.white : Colors.black87,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: successColor,
                           ),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      isPix ? 'Código Pix:' : 'Link de Pagamento:',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: isDarkMode ? Colors.white70 : Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            paymentText,
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              color: isDarkMode ? Colors.white : Colors.black87,
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.copy, size: 20),
+                          onPressed: () => _copyToClipboard(context, paymentText),
+                          tooltip: isPix ? 'Copiar Código Pix' : 'Copiar Link de Pagamento',
+                          color: Colors.blue.shade600,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _sendPaymentMessage(context),
+                        icon: const Icon(Icons.message, size: 20, color: Colors.white),
+                        label: Text(
+                          'Enviar via WhatsApp',
+                          style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: successColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 3,
+                          shadowColor: Colors.black.withOpacity(0.2),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.copy, size: 20),
-                        onPressed: () => _copyToClipboard(context, paymentText),
-                        tooltip: isPix ? 'Copiar Código Pix' : 'Copiar Link de Pagamento',
-                        color: Colors.blue.shade600,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _sendPaymentMessage(context),
-                      icon: const Icon(Icons.message, size: 20, color: Colors.white),
-                      label: Text(
-                        'Enviar via WhatsApp',
-                        style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: successColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        elevation: 2,
-                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildSummaryRow(
+    BuildContext context, {
+    required Color primaryColor,
+    IconData? icon, // Ícone agora é opcional
+    required String label,
+    required String value,
+    required bool isDarkMode,
+    TextStyle? valueStyle,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          children: [
+            if (icon != null) ...[
+              Icon(icon, color: primaryColor, size: 20),
+              const SizedBox(width: 8),
+            ],
+            Text(
+              label,
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: isDarkMode ? Colors.white70 : Colors.black54,
+              ),
+            ),
+          ],
+        ),
+        Flexible(
+          child: Text(
+            value,
+            style: valueStyle ??
+                GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: isDarkMode ? Colors.white : Colors.black87,
+                ),
+            textAlign: TextAlign.right,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }

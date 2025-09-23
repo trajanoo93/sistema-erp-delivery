@@ -1373,12 +1373,13 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
     }
   }
 
-   @override
+  @override
 Widget build(BuildContext context) {
   super.build(context);
   final totalOriginal = widget.pedido.calculateTotal(applyDiscount: false);
   final totalWithDiscount = widget.pedido.calculateTotal(applyDiscount: true);
   final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+  final primaryColor = const Color(0xFFF28C38);
   return Container(
     color: isDarkMode ? Colors.grey[900] : Colors.grey[50],
     child: Padding(
@@ -1613,6 +1614,7 @@ Widget build(BuildContext context) {
                           children: [
                             ListTile(
                               contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.calendar_today, color: primaryColor),
                               title: Text(
                                 'Data e Horário de Entrega/Retirada',
                                 style: GoogleFonts.poppins(
@@ -1645,62 +1647,74 @@ Widget build(BuildContext context) {
                       duration: const Duration(milliseconds: 300),
                       curve: Curves.easeOutCubic,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Checkbox(
-                                value: widget.pedido.showNotesField,
-                                onChanged: (value) {
-                                  widget.setStateCallback();
-                                  widget.pedido.showNotesField = value ?? false;
-                                  if (!widget.pedido.showNotesField) {
-                                    widget.pedido.notesController.text = '';
-                                  }
-                                  widget.savePersistedData(widget.pedido);
-                                },
-                                activeColor: primaryColor,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.note, color: primaryColor),
+                            title: Text(
+                              'Observações do Cliente',
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: isDarkMode ? Colors.white : Colors.black87,
                               ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Incluir observações do cliente',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                  color: isDarkMode ? Colors.white70 : Colors.black54,
-                                ),
-                              ),
-                            ],
+                            ),
+                            trailing: Checkbox(
+                              value: widget.pedido.showNotesField,
+                              onChanged: (value) {
+                                widget.setStateCallback();
+                                widget.pedido.showNotesField = value ?? false;
+                                if (!widget.pedido.showNotesField) {
+                                  widget.pedido.notesController.text = '';
+                                }
+                                widget.savePersistedData(widget.pedido);
+                              },
+                              activeColor: primaryColor,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                            ),
                           ),
-                          if (widget.pedido.showNotesField) ...[
-                            const SizedBox(height: 8),
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              curve: Curves.easeOut,
-                              decoration: BoxDecoration(
-                                color: isDarkMode ? Colors.grey[800] : Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: primaryColor.withOpacity(0.3)),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: primaryColor.withOpacity(0.1),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
+                          AnimatedCrossFade(
+                            duration: const Duration(milliseconds: 200),
+                            crossFadeState: widget.pedido.showNotesField ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                            firstChild: const SizedBox.shrink(),
+                            secondChild: Padding(
+                              padding: const EdgeInsets.only(top: 8),
                               child: TextFormField(
                                 controller: widget.pedido.notesController,
                                 maxLines: 3,
                                 decoration: InputDecoration(
-                                  labelText: 'Observações do Cliente',
+                                  labelText: 'Observações',
                                   labelStyle: GoogleFonts.poppins(
                                     color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
                                   ),
-                                  border: InputBorder.none,
-                                  prefixIcon: Icon(Icons.note, color: primaryColor),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: primaryColor, width: 2),
+                                  ),
+                                  prefixIcon: Icon(Icons.note_alt, color: primaryColor),
+                                  filled: true,
+                                  fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                 ),
                                 style: GoogleFonts.poppins(
@@ -1712,7 +1726,7 @@ Widget build(BuildContext context) {
                                 },
                               ),
                             ),
-                          ],
+                          ),
                         ],
                       ),
                     ),
@@ -1721,55 +1735,54 @@ Widget build(BuildContext context) {
                       duration: const Duration(milliseconds: 300),
                       curve: Curves.easeOutCubic,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Checkbox(
-                                value: widget.pedido.showCouponField,
-                                onChanged: (value) {
-                                  widget.setStateCallback();
-                                  widget.pedido.showCouponField = value ?? false;
-                                  if (!widget.pedido.showCouponField) {
-                                    widget.pedido.couponController.text = '';
-                                    widget.pedido.isCouponValid = false;
-                                    widget.pedido.discountAmount = 0.0;
-                                    widget.pedido.couponErrorMessage = null;
-                                  }
-                                  widget.savePersistedData(widget.pedido);
-                                },
-                                activeColor: primaryColor,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.discount, color: primaryColor),
+                            title: Text(
+                              'Cupom de Desconto',
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: isDarkMode ? Colors.white : Colors.black87,
                               ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Aplicar cupom de desconto',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                  color: isDarkMode ? Colors.white70 : Colors.black54,
-                                ),
-                              ),
-                            ],
+                            ),
+                            trailing: Checkbox(
+                              value: widget.pedido.showCouponField,
+                              onChanged: (value) {
+                                widget.setStateCallback();
+                                widget.pedido.showCouponField = value ?? false;
+                                if (!widget.pedido.showCouponField) {
+                                  widget.pedido.couponController.text = '';
+                                  widget.pedido.isCouponValid = false;
+                                  widget.pedido.discountAmount = 0.0;
+                                  widget.pedido.couponErrorMessage = null;
+                                }
+                                widget.savePersistedData(widget.pedido);
+                              },
+                              activeColor: primaryColor,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                            ),
                           ),
-                          if (widget.pedido.showCouponField) ...[
-                            const SizedBox(height: 8),
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              curve: Curves.easeOut,
-                              decoration: BoxDecoration(
-                                color: isDarkMode ? Colors.grey[800] : Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: primaryColor.withOpacity(0.3)),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: primaryColor.withOpacity(0.1),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
+                          AnimatedCrossFade(
+                            duration: const Duration(milliseconds: 200),
+                            crossFadeState: widget.pedido.showCouponField ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                            firstChild: const SizedBox.shrink(),
+                            secondChild: Padding(
+                              padding: const EdgeInsets.only(top: 8),
                               child: TextFormField(
                                 controller: widget.pedido.couponController,
                                 decoration: InputDecoration(
@@ -1777,8 +1790,21 @@ Widget build(BuildContext context) {
                                   labelStyle: GoogleFonts.poppins(
                                     color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
                                   ),
-                                  border: InputBorder.none,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: primaryColor, width: 2),
+                                  ),
                                   prefixIcon: Icon(Icons.discount, color: primaryColor),
+                                  filled: true,
+                                  fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                   suffixIcon: widget.pedido.isCouponValid
                                       ? Icon(Icons.check_circle, color: Colors.green.shade600)
@@ -1796,17 +1822,17 @@ Widget build(BuildContext context) {
                                 validator: (value) => null,
                               ),
                             ),
-                            if (widget.pedido.couponErrorMessage != null) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                widget.pedido.couponErrorMessage!,
-                                style: GoogleFonts.poppins(
-                                  color: Colors.red.shade600,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                          ),
+                          if (widget.pedido.couponErrorMessage != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              widget.pedido.couponErrorMessage!,
+                              style: GoogleFonts.poppins(
+                                color: Colors.red.shade600,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
                               ),
-                            ],
+                            ),
                           ],
                         ],
                       ),
