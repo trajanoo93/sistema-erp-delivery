@@ -6,6 +6,7 @@ import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:erp_painel_delivery/models/pedido_state.dart';
+import '../utils/log_utils.dart';
 
 class AddressSection extends StatefulWidget {
   final TextEditingController cepController;
@@ -64,33 +65,41 @@ class _AddressSectionState extends State<AddressSection> {
   );
 
   @override
-void initState() {
-  super.initState();
-  widget.cepController.addListener(_onCepChanged);
-  widget.addressController.addListener(_onFieldChanged);
-  widget.numberController.addListener(_onFieldChanged);
-  widget.complementController.addListener(_onFieldChanged);
-  widget.neighborhoodController.addListener(_onFieldChanged);
-  widget.cityController.addListener(_onFieldChanged);
-  _shippingCostController.text = widget.pedido?.shippingCostController.text ?? widget.externalShippingCost.toStringAsFixed(2);
-}
-void _onFieldChanged() {
-  widget.onChanged(widget.cepController.text); // Pode usar o campo relevante
-  widget.savePersistedData?.call();
-}
+  void initState() {
+    super.initState();
+    widget.cepController.addListener(_onCepChanged);
+    widget.addressController.addListener(_onFieldChanged);
+    widget.numberController.addListener(_onFieldChanged);
+    widget.complementController.addListener(_onFieldChanged);
+    widget.neighborhoodController.addListener(_onFieldChanged);
+    widget.cityController.addListener(_onFieldChanged);
+    _shippingCostController.text = widget.pedido?.shippingCostController.text ?? widget.externalShippingCost.toStringAsFixed(2);
+    // Verificar shippingMethod na inicialização
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.shippingMethod == 'pickup' && widget.pedido?.cepController.text.isNotEmpty == true) {
+        resetSection();
+        logToFile('Reset AddressSection due to shippingMethod change to pickup');
+      }
+    });
+  }
+
+  void _onFieldChanged() {
+    widget.onChanged(widget.cepController.text);
+    widget.savePersistedData?.call();
+  }
 
   @override
-void dispose() {
-  widget.cepController.removeListener(_onCepChanged);
-  widget.addressController.removeListener(_onFieldChanged);
-  widget.numberController.removeListener(_onFieldChanged);
-  widget.complementController.removeListener(_onFieldChanged);
-  widget.neighborhoodController.removeListener(_onFieldChanged);
-  widget.cityController.removeListener(_onFieldChanged);
-  _debounce?.cancel();
-  _shippingCostController.dispose();
-  super.dispose();
-}
+  void dispose() {
+    widget.cepController.removeListener(_onCepChanged);
+    widget.addressController.removeListener(_onFieldChanged);
+    widget.numberController.removeListener(_onFieldChanged);
+    widget.complementController.removeListener(_onFieldChanged);
+    widget.neighborhoodController.removeListener(_onFieldChanged);
+    widget.cityController.removeListener(_onFieldChanged);
+    _debounce?.cancel();
+    _shippingCostController.dispose();
+    super.dispose();
+  }
 
   void _onCepChanged() {
     widget.onChanged(widget.cepController.text);
@@ -101,12 +110,28 @@ void dispose() {
       if (widget.shippingMethod == 'delivery' && widget.checkStoreByCep != null) {
         _debouncedCheckStoreByCep();
       } else if (widget.shippingMethod == 'pickup') {
+        final storeFinal = widget.pedido?.storeFinal.isNotEmpty == true &&
+                ['Central Distribuição (Sagrada Família)', 'Unidade Barreiro', 'Unidade Sion']
+                    .contains(widget.pedido?.storeFinal)
+            ? widget.pedido!.storeFinal
+            : 'Central Distribuição (Sagrada Família)';
+        final storeId = widget.pedido?.pickupStoreId.isNotEmpty == true &&
+                ['86261', '110727', '127163'].contains(widget.pedido?.pickupStoreId)
+            ? widget.pedido!.pickupStoreId
+            : '86261';
         widget.onShippingCostUpdated(0.0);
-        widget.onStoreUpdated('Central Distribuição (Sagrada Família)', '86261');
+        widget.onStoreUpdated(storeFinal, storeId);
         setState(() {
-          _storeIndication = 'Retirada na loja selecionada.';
+          _storeIndication = 'Retirada na loja selecionada: $storeFinal';
         });
+        if (widget.pedido != null) {
+          widget.pedido!.shippingCost = 0.0;
+          widget.pedido!.shippingCostController.text = '0.00';
+          widget.pedido!.storeFinal = storeFinal;
+          widget.pedido!.pickupStoreId = storeId;
+        }
         widget.savePersistedData?.call();
+        logToFile('Pickup mode in _onCepChanged: storeFinal=$storeFinal, pickupStoreId=$storeId, shippingCost=0.0');
       }
     } else {
       widget.onShippingCostUpdated(0.0);
@@ -114,21 +139,45 @@ void dispose() {
       setState(() {
         _storeIndication = null;
       });
+      if (widget.pedido != null) {
+        widget.pedido!.shippingCost = 0.0;
+        widget.pedido!.shippingCostController.text = '0.00';
+        widget.pedido!.storeFinal = '';
+        widget.pedido!.pickupStoreId = '';
+      }
       widget.savePersistedData?.call();
+      logToFile('CEP inválido ou vazio: reset shippingCost=0.0, storeFinal="", pickupStoreId=""');
     }
   }
 
   void _debouncedCheckStoreByCep() {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), () async {
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
       if (mounted && widget.checkStoreByCep != null) {
         await widget.checkStoreByCep!();
         if (mounted) {
-          final cost = widget.pedido?.shippingCost ?? 0.0;
-          final storeFinal = widget.pedido?.storeFinal ?? '';
-          final storeId = widget.pedido?.pickupStoreId ?? '';
+          final cost = widget.shippingMethod == 'pickup' ? 0.0 : (widget.pedido?.shippingCost ?? 0.0);
+          final storeFinal = widget.shippingMethod == 'pickup'
+              ? (widget.pedido?.storeFinal.isNotEmpty == true &&
+                      ['Central Distribuição (Sagrada Família)', 'Unidade Barreiro', 'Unidade Sion']
+                          .contains(widget.pedido?.storeFinal)
+                  ? widget.pedido!.storeFinal
+                  : 'Central Distribuição (Sagrada Família)')
+              : (widget.pedido?.storeFinal ?? '');
+          final storeId = widget.shippingMethod == 'pickup'
+              ? (widget.pedido?.pickupStoreId.isNotEmpty == true &&
+                      ['86261', '110727', '127163'].contains(widget.pedido?.pickupStoreId)
+                  ? widget.pedido!.pickupStoreId
+                  : '86261')
+              : (widget.pedido?.pickupStoreId ?? '');
           widget.onShippingCostUpdated(cost);
           widget.onStoreUpdated(storeFinal, storeId);
+          if (widget.pedido != null) {
+            widget.pedido!.shippingCost = cost;
+            widget.pedido!.shippingCostController.text = cost.toStringAsFixed(2);
+            widget.pedido!.storeFinal = storeFinal;
+            widget.pedido!.pickupStoreId = storeId;
+          }
           setState(() {
             _storeIndication = storeFinal.isNotEmpty && widget.shippingMethod == 'delivery'
                 ? (storeFinal == 'Unidade Barreiro'
@@ -137,11 +186,14 @@ void dispose() {
                         ? 'Este pedido será enviado pela Unidade Sion.'
                         : null)
                 : widget.shippingMethod == 'pickup'
-                    ? 'Retirada na loja selecionada.'
+                    ? 'Retirada na loja selecionada: $storeFinal'
                     : null;
           });
-          print('Atualizado após debounce: cost=$cost, storeFinal=$storeFinal, _storeIndication=$_storeIndication');
+          print('Atualizado após debounce: cost=$cost, storeFinal=$storeFinal, storeId=$storeId, _storeIndication=$_storeIndication');
           widget.savePersistedData?.call();
+          logToFile(
+              'Debounced checkStoreByCep: shippingMethod=${widget.shippingMethod}, '
+              'cost=$cost, storeFinal=$storeFinal, storeId=$storeId, _storeIndication=$_storeIndication');
         }
       }
     });
@@ -149,6 +201,7 @@ void dispose() {
 
   Future<void> _fetchAddressFromCep(String cep) async {
     print('Iniciando _fetchAddressFromCep para CEP: $cep');
+    logToFile('Fetching address from ViaCEP for CEP: $cep');
     setState(() {
       _isFetchingStore = true;
     });
@@ -158,7 +211,7 @@ void dispose() {
         Uri.parse('https://viacep.com.br/ws/$cep/json/'),
         headers: {'Content-Type': 'application/json'},
       );
-      print('Resposta do ViaCEP: ${response.body}');
+      logToFile('ViaCEP response: status=${response.statusCode}, body=${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -174,22 +227,24 @@ void dispose() {
           widget.onChanged(widget.cityController.text);
           widget.onChanged(widget.complementController.text);
           widget.savePersistedData?.call();
-          print('Endereço atualizado com sucesso');
+          logToFile('Address updated: logradouro=${data['logradouro']}, bairro=${data['bairro']}, cidade=${data['localidade']}');
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('CEP não encontrado')),
           );
+          logToFile('ViaCEP error: CEP not found for $cep');
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Erro ao buscar endereço')),
         );
+        logToFile('ViaCEP error: status=${response.statusCode}, body=${response.body}');
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erro na requisição: $e')),
       );
-      print('Erro na requisição ViaCEP: $e');
+      logToFile('ViaCEP exception: $e');
     } finally {
       setState(() {
         _isFetchingStore = false;
@@ -215,6 +270,7 @@ void dispose() {
         widget.pedido!.shippingCostController.text = newCost.toStringAsFixed(2);
       }
       widget.savePersistedData?.call();
+      logToFile('Shipping cost saved: $newCost');
     }
     setState(() {
       _isEditingShippingCost = false;
@@ -226,36 +282,43 @@ void dispose() {
       _isEditingShippingCost = false;
       _shippingCostController.text = widget.pedido?.shippingCostController.text ?? widget.externalShippingCost.toStringAsFixed(2);
     });
+    logToFile('Shipping cost edit cancelled, reverted to: ${_shippingCostController.text}');
   }
 
   void resetSection() {
-  if (!mounted) return;
-  setState(() {
-    _storeIndication = null;
-    _isEditingShippingCost = false;
-    _shippingCostController.text = '0.00';
-  });
-  widget.cepController.clear();
-  widget.addressController.clear();
-  widget.numberController.clear();
-  widget.complementController.clear();
-  widget.neighborhoodController.clear();
-  widget.cityController.clear();
-  widget.onShippingCostUpdated(0.0);
-  widget.onStoreUpdated('', '');
-  widget.savePersistedData?.call();
-  if (widget.pedido != null) {
-    widget.pedido!.cepController.clear();
-    widget.pedido!.addressController.clear();
-    widget.pedido!.numberController.clear();
-    widget.pedido!.complementController.clear();
-    widget.pedido!.neighborhoodController.clear();
-    widget.pedido!.cityController.clear();
-    widget.pedido!.storeFinal = '';
-    widget.pedido!.pickupStoreId = '';
+    if (!mounted) return;
+    setState(() {
+      _storeIndication = null;
+      _isEditingShippingCost = false;
+      _shippingCostController.text = '0.00';
+    });
+    widget.cepController.clear();
+    widget.addressController.clear();
+    widget.numberController.clear();
+    widget.complementController.clear();
+    widget.neighborhoodController.clear();
+    widget.cityController.clear();
+    widget.onShippingCostUpdated(0.0);
+    widget.onStoreUpdated('', '');
+    if (widget.pedido != null) {
+      widget.pedido!.cepController.clear();
+      widget.pedido!.addressController.clear();
+      widget.pedido!.numberController.clear();
+      widget.pedido!.complementController.clear();
+      widget.pedido!.neighborhoodController.clear();
+      widget.pedido!.cityController.clear();
+      widget.pedido!.shippingCost = 0.0;
+      widget.pedido!.shippingCostController.text = '0.00';
+      widget.pedido!.storeFinal = widget.shippingMethod == 'pickup' ? 'Central Distribuição (Sagrada Família)' : '';
+      widget.pedido!.pickupStoreId = widget.shippingMethod == 'pickup' ? '86261' : '';
+    }
+    widget.savePersistedData?.call();
+    widget.onReset?.call();
+    logToFile(
+        'AddressSection reset: shippingMethod=${widget.shippingMethod}, '
+        'storeFinal=${widget.pedido?.storeFinal}, pickupStoreId=${widget.pedido?.pickupStoreId}, '
+        'shippingCost=${widget.pedido?.shippingCost}');
   }
-  widget.onReset?.call();
-}
 
   @override
   Widget build(BuildContext context) {

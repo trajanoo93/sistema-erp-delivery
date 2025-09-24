@@ -181,40 +181,52 @@ String _paymentSlugFromLabel(String uiLabel) {
     }
   }
 
-  Future<void> _savePersistedData(PedidoState pedido) async {
-    final prefs = await SharedPreferences.getInstance();
-    final index = _pedidos.indexOf(pedido);
-    if (index >= 0) {
-      await prefs.setString('phone_$index', pedido.phoneController.text);
-      await prefs.setString('name_$index', pedido.nameController.text);
-      await prefs.setString('email_$index', pedido.emailController.text);
-      await prefs.setString('cep_$index', pedido.cepController.text);
-      await prefs.setString('address_$index', pedido.addressController.text);
-      await prefs.setString('number_$index', pedido.numberController.text);
-      await prefs.setString('complement_$index', pedido.complementController.text);
-      await prefs.setString('neighborhood_$index', pedido.neighborhoodController.text);
-      await prefs.setString('city_$index', pedido.cityController.text);
-      await prefs.setString('notes_$index', pedido.notesController.text);
-      await prefs.setString('coupon_$index', pedido.couponController.text);
-      await prefs.setString('products_$index', jsonEncode(pedido.products));
-      await prefs.setString('shippingMethod_$index', pedido.shippingMethod);
-      await prefs.setString('paymentMethod_$index', pedido.selectedPaymentMethod);
-      await prefs.setString('availablePaymentMethods_$index', jsonEncode(pedido.availablePaymentMethods));
-      await prefs.setString('paymentAccounts_$index', jsonEncode(pedido.paymentAccounts));
-      await prefs.setDouble('shippingCost_$index', pedido.shippingCost);
-      await prefs.setString('storeFinal_$index', pedido.storeFinal);
-      await prefs.setString('pickupStoreId_$index', pedido.pickupStoreId);
-      await prefs.setBool('showNotesField_$index', pedido.showNotesField);
-      await prefs.setBool('showCouponField_$index', pedido.showCouponField);
-      await prefs.setString('schedulingDate_$index', pedido.schedulingDate);
-      await prefs.setString('schedulingTime_$index', pedido.schedulingTime);
-      await prefs.setBool('isCustomerSectionExpanded_$index', pedido.isCustomerSectionExpanded);
-      await prefs.setBool('isAddressSectionExpanded_$index', pedido.isAddressSectionExpanded);
-      await prefs.setBool('isProductsSectionExpanded_$index', pedido.isProductsSectionExpanded);
-      await prefs.setBool('isShippingSectionExpanded_$index', pedido.isShippingSectionExpanded);
-      await _savePedidos();
+ Future<void> _savePersistedData(PedidoState pedido) async {
+  final prefs = await SharedPreferences.getInstance();
+  final index = _pedidos.indexOf(pedido);
+  if (index >= 0) {
+    if (pedido.shippingMethod == 'pickup') {
+      pedido.shippingCost = 0.0;
+      pedido.shippingCostController.text = '0.00';
+      if (!['Central Distribuição (Sagrada Família)', 'Unidade Barreiro', 'Unidade Sion'].contains(pedido.storeFinal)) {
+        pedido.storeFinal = 'Central Distribuição (Sagrada Família)';
+        pedido.pickupStoreId = '86261';
+      }
     }
+    await prefs.setString('phone_$index', pedido.phoneController.text);
+    await prefs.setString('name_$index', pedido.nameController.text);
+    await prefs.setString('email_$index', pedido.emailController.text);
+    await prefs.setString('cep_$index', pedido.cepController.text);
+    await prefs.setString('address_$index', pedido.addressController.text);
+    await prefs.setString('number_$index', pedido.numberController.text);
+    await prefs.setString('complement_$index', pedido.complementController.text);
+    await prefs.setString('neighborhood_$index', pedido.neighborhoodController.text);
+    await prefs.setString('city_$index', pedido.cityController.text);
+    await prefs.setString('notes_$index', pedido.notesController.text);
+    await prefs.setString('coupon_$index', pedido.couponController.text);
+    await prefs.setString('products_$index', jsonEncode(pedido.products));
+    await prefs.setString('shippingMethod_$index', pedido.shippingMethod);
+    await prefs.setString('paymentMethod_$index', pedido.selectedPaymentMethod);
+    await prefs.setString('availablePaymentMethods_$index', jsonEncode(pedido.availablePaymentMethods));
+    await prefs.setString('paymentAccounts_$index', jsonEncode(pedido.paymentAccounts));
+    await prefs.setDouble('shippingCost_$index', pedido.shippingCost);
+    await prefs.setString('storeFinal_$index', pedido.storeFinal);
+    await prefs.setString('pickupStoreId_$index', pedido.pickupStoreId);
+    await prefs.setBool('showNotesField_$index', pedido.showNotesField);
+    await prefs.setBool('showCouponField_$index', pedido.showCouponField);
+    await prefs.setString('schedulingDate_$index', pedido.schedulingDate);
+    await prefs.setString('schedulingTime_$index', pedido.schedulingTime);
+    await prefs.setBool('isCustomerSectionExpanded_$index', pedido.isCustomerSectionExpanded);
+    await prefs.setBool('isAddressSectionExpanded_$index', pedido.isAddressSectionExpanded);
+    await prefs.setBool('isProductsSectionExpanded_$index', pedido.isProductsSectionExpanded);
+    await prefs.setBool('isShippingSectionExpanded_$index', pedido.isShippingSectionExpanded);
+    await _savePedidos();
+    await logToFile(
+        'Saved persisted data for index $index: shippingMethod=${pedido.shippingMethod}, '
+        'storeFinal=${pedido.storeFinal}, pickupStoreId=${pedido.pickupStoreId}, '
+        'shippingCost=${pedido.shippingCost}');
   }
+}
 
   @override
   void initState() {
@@ -335,76 +347,85 @@ String _paymentSlugFromLabel(String uiLabel) {
   }
 
   Future<void> _loadPersistedData(PedidoState pedido) async {
-    final prefs = await SharedPreferences.getInstance();
-    final index = _pedidos.indexOf(pedido);
-    if (index >= 0 && prefs.getString('phone_$index') == null) {
-      pedido.phoneController.text = '';
-      pedido.nameController.text = '';
-      pedido.emailController.text = '';
-      pedido.cepController.text = '';
-      pedido.addressController.text = '';
-      pedido.numberController.text = '';
-      pedido.complementController.text = '';
-      pedido.neighborhoodController.text = '';
-      pedido.cityController.text = '';
-      pedido.notesController.text = '';
-      pedido.couponController.text = '';
-      pedido.products = [];
-      pedido.shippingMethod = '';
-      pedido.selectedPaymentMethod = '';
-      pedido.availablePaymentMethods = [];
-      pedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
-      pedido.shippingCost = 0.0;
-      pedido.shippingCostController.text = '0.00';
-      pedido.storeFinal = '';
-      pedido.pickupStoreId = '';
-      pedido.showNotesField = false;
-      pedido.showCouponField = false;
-      pedido.schedulingDate = '';
-      pedido.schedulingTime = '';
-      pedido.isCustomerSectionExpanded = true;
-      pedido.isAddressSectionExpanded = true;
-      pedido.isProductsSectionExpanded = true;
-      pedido.isShippingSectionExpanded = true;
-      return;
-    }
-    pedido.phoneController.text = prefs.getString('phone_$index') ?? '';
-    pedido.nameController.text = prefs.getString('name_$index') ?? '';
-    pedido.emailController.text = prefs.getString('email_$index') ?? '';
-    pedido.cepController.text = prefs.getString('cep_$index') ?? '';
-    pedido.addressController.text = prefs.getString('address_$index') ?? '';
-    pedido.numberController.text = prefs.getString('number_$index') ?? '';
-    pedido.complementController.text = prefs.getString('complement_$index') ?? '';
-    pedido.neighborhoodController.text = prefs.getString('neighborhood_$index') ?? '';
-    pedido.cityController.text = prefs.getString('city_$index') ?? '';
-    pedido.notesController.text = prefs.getString('notes_$index') ?? '';
-    pedido.couponController.text = prefs.getString('coupon_$index') ?? '';
-    pedido.products = (jsonDecode(prefs.getString('products_$index') ?? '[]') as List)
-        .cast<Map<String, dynamic>>();
-    pedido.shippingMethod = prefs.getString('shippingMethod_$index') ?? '';
-    String? savedPaymentMethod = prefs.getString('paymentMethod_$index');
-    pedido.selectedPaymentMethod = _validPaymentMethods.contains(savedPaymentMethod)
-        ? savedPaymentMethod ?? ''
-        : '';
-    pedido.availablePaymentMethods = List<Map<String, String>>.from(
-        jsonDecode(prefs.getString('availablePaymentMethods_$index') ?? '[]'));
-    pedido.paymentAccounts = Map<String, String>.from(
-        jsonDecode(prefs.getString('paymentAccounts_$index') ?? '{"stripe":"stripe","pagarme":"central"}'));
-    pedido.shippingCost = (pedido.shippingMethod == 'pickup')
-        ? 0.0
-        : prefs.getDouble('shippingCost_$index') ?? 0.0;
-    pedido.shippingCostController.text = pedido.shippingCost.toStringAsFixed(2);
-    pedido.storeFinal = prefs.getString('storeFinal_$index') ?? '';
-    pedido.pickupStoreId = prefs.getString('pickupStoreId_$index') ?? '';
-    pedido.showNotesField = prefs.getBool('showNotesField_$index') ?? false;
-    pedido.showCouponField = prefs.getBool('showCouponField_$index') ?? false;
-    pedido.schedulingDate = prefs.getString('schedulingDate_$index') ?? DateFormat('yyyy-MM-dd').format(DateTime.now());
-    pedido.schedulingTime = ensureTimeRange(prefs.getString('schedulingTime_$index') ?? '09:00 - 12:00');
-    pedido.isCustomerSectionExpanded = prefs.getBool('isCustomerSectionExpanded_$index') ?? true;
-    pedido.isAddressSectionExpanded = prefs.getBool('isAddressSectionExpanded_$index') ?? true;
-    pedido.isProductsSectionExpanded = prefs.getBool('isProductsSectionExpanded_$index') ?? true;
-    pedido.isShippingSectionExpanded = prefs.getBool('isShippingSectionExpanded_$index') ?? true;
+  final prefs = await SharedPreferences.getInstance();
+  final index = _pedidos.indexOf(pedido);
+  if (index >= 0 && prefs.getString('phone_$index') == null) {
+    pedido.phoneController.text = '';
+    pedido.nameController.text = '';
+    pedido.emailController.text = '';
+    pedido.cepController.text = '';
+    pedido.addressController.text = '';
+    pedido.numberController.text = '';
+    pedido.complementController.text = '';
+    pedido.neighborhoodController.text = '';
+    pedido.cityController.text = '';
+    pedido.notesController.text = '';
+    pedido.couponController.text = '';
+    pedido.products = [];
+    pedido.shippingMethod = 'delivery';
+    pedido.selectedPaymentMethod = '';
+    pedido.availablePaymentMethods = [];
+    pedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+    pedido.shippingCost = 0.0;
+    pedido.shippingCostController.text = '0.00';
+    pedido.storeFinal = '';
+    pedido.pickupStoreId = '';
+    pedido.showNotesField = false;
+    pedido.showCouponField = false;
+    pedido.schedulingDate = '';
+    pedido.schedulingTime = '';
+    pedido.isCustomerSectionExpanded = true;
+    pedido.isAddressSectionExpanded = true;
+    pedido.isProductsSectionExpanded = true;
+    pedido.isShippingSectionExpanded = true;
+    await logToFile('Initialized new pedido for index $index with default values');
+    return;
   }
+  pedido.phoneController.text = prefs.getString('phone_$index') ?? '';
+  pedido.nameController.text = prefs.getString('name_$index') ?? '';
+  pedido.emailController.text = prefs.getString('email_$index') ?? '';
+  pedido.cepController.text = prefs.getString('cep_$index') ?? '';
+  pedido.addressController.text = prefs.getString('address_$index') ?? '';
+  pedido.numberController.text = prefs.getString('number_$index') ?? '';
+  pedido.complementController.text = prefs.getString('complement_$index') ?? '';
+  pedido.neighborhoodController.text = prefs.getString('neighborhood_$index') ?? '';
+  pedido.cityController.text = prefs.getString('city_$index') ?? '';
+  pedido.notesController.text = prefs.getString('notes_$index') ?? '';
+  pedido.couponController.text = prefs.getString('coupon_$index') ?? '';
+  pedido.products = (jsonDecode(prefs.getString('products_$index') ?? '[]') as List)
+      .cast<Map<String, dynamic>>();
+  pedido.shippingMethod = prefs.getString('shippingMethod_$index') ?? 'delivery';
+  String? savedPaymentMethod = prefs.getString('paymentMethod_$index');
+  pedido.selectedPaymentMethod = _validPaymentMethods.contains(savedPaymentMethod)
+      ? savedPaymentMethod ?? ''
+      : '';
+  pedido.availablePaymentMethods = List<Map<String, String>>.from(
+      jsonDecode(prefs.getString('availablePaymentMethods_$index') ?? '[]'));
+  pedido.paymentAccounts = Map<String, String>.from(
+      jsonDecode(prefs.getString('paymentAccounts_$index') ?? '{"stripe":"stripe","pagarme":"central"}'));
+  pedido.shippingCost = pedido.shippingMethod == 'pickup'
+      ? 0.0
+      : (prefs.getDouble('shippingCost_$index') ?? 0.0);
+  pedido.shippingCostController.text = pedido.shippingCost.toStringAsFixed(2);
+  pedido.storeFinal = pedido.shippingMethod == 'pickup'
+      ? (prefs.getString('storeFinal_$index') ?? 'Central Distribuição (Sagrada Família)')
+      : (prefs.getString('storeFinal_$index') ?? '');
+  pedido.pickupStoreId = pedido.shippingMethod == 'pickup'
+      ? (prefs.getString('pickupStoreId_$index') ?? '86261')
+      : (prefs.getString('pickupStoreId_$index') ?? '');
+  pedido.showNotesField = prefs.getBool('showNotesField_$index') ?? false;
+  pedido.showCouponField = prefs.getBool('showCouponField_$index') ?? false;
+  pedido.schedulingDate = prefs.getString('schedulingDate_$index') ?? DateFormat('yyyy-MM-dd').format(DateTime.now());
+  pedido.schedulingTime = ensureTimeRange(prefs.getString('schedulingTime_$index') ?? '09:00 - 12:00');
+  pedido.isCustomerSectionExpanded = prefs.getBool('isCustomerSectionExpanded_$index') ?? true;
+  pedido.isAddressSectionExpanded = prefs.getBool('isAddressSectionExpanded_$index') ?? true;
+  pedido.isProductsSectionExpanded = prefs.getBool('isProductsSectionExpanded_$index') ?? true;
+  pedido.isShippingSectionExpanded = prefs.getBool('isShippingSectionExpanded_$index') ?? true;
+  await logToFile(
+      'Loaded persisted data for index $index: shippingMethod=${pedido.shippingMethod}, '
+      'storeFinal=${pedido.storeFinal}, pickupStoreId=${pedido.pickupStoreId}, '
+      'shippingCost=${pedido.shippingCost}');
+}
 
   Future<void> _addNewPedido() async {
     if (_isAddingTab) return;
@@ -586,11 +607,7 @@ Future<void> _checkStoreByCep() async {
       if (newStoreFinal == null) {
         throw Exception('Nenhuma loja válida retornada pelo endpoint store-decision.');
       }
-      if (newStoreFinal != currentPedido.storeFinal) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Loja ajustada para $newStoreFinal devido ao horário')),
-        );
-      }
+      
       setState(() {
         currentPedido.storeFinal = newStoreFinal;
         currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(newStoreFinal);
@@ -656,9 +673,6 @@ Future<void> _checkStoreByCep() async {
             : '';
       }
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Não foi possível identificar a loja para o CEP. Usando Central Distribuição como padrão.')),
-    );
   } finally {
     setState(() => _isLoading = false);
     await _savePersistedData(currentPedido);
@@ -755,11 +769,6 @@ Future<void> _checkStoreByCep() async {
       final newStoreFinal = data['effective_store_final']?.toString() ?? data['store_final']?.toString();
       if (newStoreFinal == null) {
         throw Exception('Nenhuma loja válida retornada pelo endpoint store-decision.');
-      }
-      if (newStoreFinal != currentPedido.storeFinal) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Loja ajustada para $newStoreFinal devido ao horário')),
-        );
       }
       setState(() {
         currentPedido.storeFinal = newStoreFinal;

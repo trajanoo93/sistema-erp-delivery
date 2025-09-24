@@ -14,6 +14,7 @@ class ShippingSection extends StatefulWidget {
   final Function(double) onShippingCostUpdated;
   final PedidoState pedido;
   final Function() onSchedulingChanged;
+  final Future<void> Function(PedidoState)? savePersistedData; // Callback
 
   const ShippingSection({
     Key? key,
@@ -23,6 +24,7 @@ class ShippingSection extends StatefulWidget {
     required this.onShippingCostUpdated,
     required this.pedido,
     required this.onSchedulingChanged,
+    this.savePersistedData,
   }) : super(key: key);
 
   @override
@@ -52,16 +54,20 @@ class _ShippingSectionState extends State<ShippingSection> {
     _shippingMethod = widget.pedido.shippingMethod.isNotEmpty ? widget.pedido.shippingMethod : 'delivery';
     _pickupStore = _pickupStores.contains(widget.pedido.storeFinal) ? widget.pedido.storeFinal : _pickupStores.first;
     _storeFinal = _pickupStore;
-    _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '';
-
+    _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '86261';
+    widget.pedido.storeFinal = _storeFinal;
+    widget.pedido.pickupStoreId = _pickupStoreId;
+    if (_shippingMethod == 'pickup') {
+      widget.pedido.shippingCost = 0.0;
+      widget.pedido.shippingCostController.text = '0.00';
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         widget.onShippingMethodUpdated(_shippingMethod);
-        if (_shippingMethod == 'pickup') {
-          widget.onShippingCostUpdated(0.0);
-          widget.onStoreUpdated(_storeFinal, _pickupStoreId);
-        }
+        widget.onStoreUpdated(_storeFinal, _pickupStoreId);
+        widget.onShippingCostUpdated(widget.pedido.shippingCost);
         _fetchStoreDecision(widget.cep);
+        logToFile('initState: shippingMethod=$_shippingMethod, storeFinal=$_storeFinal, pickupStoreId=$_pickupStoreId, shippingCost=${widget.pedido.shippingCost}');
       }
     });
   }
@@ -73,11 +79,20 @@ class _ShippingSectionState extends State<ShippingSection> {
       setState(() {
         _pickupStore = _pickupStores.contains(widget.pedido.storeFinal) ? widget.pedido.storeFinal : _pickupStores.first;
         _storeFinal = _pickupStore;
-        _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '';
+        _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '86261';
+        widget.pedido.storeFinal = _storeFinal;
+        widget.pedido.pickupStoreId = _pickupStoreId;
+        if (_shippingMethod == 'pickup') {
+          widget.pedido.shippingCost = 0.0;
+          widget.pedido.shippingCostController.text = '0.00';
+        }
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
+          widget.onStoreUpdated(_storeFinal, _pickupStoreId);
+          widget.onShippingCostUpdated(widget.pedido.shippingCost);
           _fetchStoreDecision(widget.cep);
+          logToFile('didUpdateWidget: cep=${widget.cep}, storeFinal=$_storeFinal, pickupStoreId=$_pickupStoreId, shippingCost=${widget.pedido.shippingCost}');
         }
       });
     }
@@ -86,16 +101,41 @@ class _ShippingSectionState extends State<ShippingSection> {
   Future<void> _fetchStoreDecision(String cep) async {
     await logToFile('Fetching store decision for CEP: $cep, Shipping Method: $_shippingMethod, Pickup Store: $_pickupStore, Pedido StoreFinal: ${widget.pedido.storeFinal}');
 
-    if (cep.length != 8 && _shippingMethod != 'pickup') {
+    if (_shippingMethod == 'pickup') {
+      setState(() {
+        _storeFinal = _pickupStore.isNotEmpty && _pickupStores.contains(_pickupStore)
+            ? _pickupStore
+            : _pickupStores.first;
+        _pickupStoreId = _pickupStoreIds[_storeFinal] ?? '86261';
+        widget.pedido.shippingCost = 0.0;
+        widget.pedido.shippingCostController.text = '0.00';
+        widget.pedido.storeFinal = _storeFinal;
+        widget.pedido.pickupStoreId = _pickupStoreId;
+      });
+      widget.onShippingCostUpdated(0.0);
+      widget.onStoreUpdated(_storeFinal, _pickupStoreId);
+      widget.pedido.notifyListeners();
+      await logToFile('Pickup mode: Reset shippingCost to 0.0, storeFinal: $_storeFinal, pickupStoreId: $_pickupStoreId');
+      widget.savePersistedData?.call(widget.pedido);
+      return;
+    }
+
+    if (cep.length != 8) {
       await logToFile('CEP is incomplete, resetting store and cost.');
       setState(() {
         _storeFinal = '';
         _pickupStoreId = '';
         widget.pedido.availablePaymentMethods = [];
         widget.pedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+        widget.pedido.shippingCost = 0.0;
+        widget.pedido.shippingCostController.text = '0.00';
+        widget.pedido.storeFinal = '';
+        widget.pedido.pickupStoreId = '';
       });
       widget.onShippingCostUpdated(0.0);
       widget.onStoreUpdated('', '');
+      widget.pedido.notifyListeners();
+      widget.savePersistedData?.call(widget.pedido);
       return;
     }
 
@@ -115,7 +155,7 @@ class _ShippingSectionState extends State<ShippingSection> {
         Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(requestBody),
-      ).timeout(Duration(seconds: 15), onTimeout: () {
+      ).timeout(const Duration(seconds: 15), onTimeout: () {
         throw Exception('Timeout ao buscar opções de entrega');
       });
 
@@ -127,7 +167,7 @@ class _ShippingSectionState extends State<ShippingSection> {
         final costResponse = await http.get(
           Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
           headers: {'Content-Type': 'application/json'},
-        ).timeout(Duration(seconds: 15), onTimeout: () {
+        ).timeout(const Duration(seconds: 15), onTimeout: () {
           throw Exception('Timeout ao buscar custo de frete');
         });
 
@@ -152,10 +192,14 @@ class _ShippingSectionState extends State<ShippingSection> {
           await logToFile('Parsed JSON: ${jsonEncode(storeDecision)}');
           setState(() {
             if (_shippingMethod == 'pickup') {
-              _storeFinal = _pickupStore.isNotEmpty ? _pickupStore : _pickupStores.first;
+              _storeFinal = _pickupStore.isNotEmpty && _pickupStores.contains(_pickupStore)
+                  ? _pickupStore
+                  : _pickupStores.first;
               _pickupStoreId = _pickupStoreIds[_storeFinal] ?? '86261';
             } else {
-              _storeFinal = storeDecision['effective_store_final']?.toString() ?? storeDecision['store_final']?.toString() ?? 'Central Distribuição (Sagrada Família)';
+              _storeFinal = storeDecision['effective_store_final']?.toString() ??
+                  storeDecision['store_final']?.toString() ??
+                  'Central Distribuição (Sagrada Família)';
               _pickupStoreId = storeDecision['pickup_store_id']?.toString() ?? '86261';
             }
             widget.pedido.storeFinal = _storeFinal;
@@ -169,7 +213,8 @@ class _ShippingSectionState extends State<ShippingSection> {
               if (id == 'woo_payment_on_delivery' && !seenTitles.contains('Dinheiro na Entrega')) {
                 widget.pedido.availablePaymentMethods.add({'id': 'cod', 'title': 'Dinheiro na Entrega'});
                 seenTitles.add('Dinheiro na Entrega');
-              } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') && !seenTitles.contains('Cartão de Crédito On-line')) {
+              } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') &&
+                  !seenTitles.contains('Cartão de Crédito On-line')) {
                 widget.pedido.availablePaymentMethods.add({
                   'id': storeDecision['payment_accounts']['stripe'] ?? 'stripe',
                   'title': 'Cartão de Crédito On-line'
@@ -189,20 +234,19 @@ class _ShippingSectionState extends State<ShippingSection> {
                   ? widget.pedido.availablePaymentMethods.first['title'] ?? ''
                   : '';
             }
+            widget.pedido.shippingCost = _shippingMethod == 'pickup' ? 0.0 : shippingCost;
+            widget.pedido.shippingCostController.text = widget.pedido.shippingCost.toStringAsFixed(2);
           });
 
-          await logToFile('Updated state - Store Final: $_storeFinal, Pickup Store ID: $_pickupStoreId, Payment Methods: ${widget.pedido.availablePaymentMethods}, Payment Accounts: ${widget.pedido.paymentAccounts}');
+          await logToFile(
+              'Updated state - Store Final: $_storeFinal, Pickup Store ID: $_pickupStoreId, '
+              'Payment Methods: ${widget.pedido.availablePaymentMethods}, Payment Accounts: ${widget.pedido.paymentAccounts}, '
+              'Shipping Cost: ${widget.pedido.shippingCost}');
 
           widget.onStoreUpdated(_storeFinal, _pickupStoreId);
-          if (_shippingMethod == 'delivery') {
-            widget.onShippingCostUpdated(shippingCost);
-            widget.pedido.shippingCost = shippingCost;
-            widget.pedido.shippingCostController.text = shippingCost.toStringAsFixed(2);
-          } else {
-            widget.onShippingCostUpdated(0.0);
-            widget.pedido.shippingCost = 0.0;
-            widget.pedido.shippingCostController.text = '0.00';
-          }
+          widget.onShippingCostUpdated(widget.pedido.shippingCost);
+          widget.pedido.notifyListeners();
+          widget.savePersistedData?.call(widget.pedido);
         } catch (e, stackTrace) {
           await logToFile('Erro ao parsear resposta JSON: $e, StackTrace: $stackTrace');
           throw Exception('Erro ao parsear resposta JSON: $e');
@@ -225,15 +269,13 @@ class _ShippingSectionState extends State<ShippingSection> {
           {'id': 'custom_e876f567c151864', 'title': 'Vale Alimentação'},
         ];
         widget.pedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+        widget.pedido.shippingCost = 0.0;
+        widget.pedido.shippingCostController.text = '0.00';
       });
       widget.onStoreUpdated(_storeFinal, _pickupStoreId);
       widget.onShippingCostUpdated(0.0);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Não foi possível verificar a loja para o CEP $cep. Usando Central Distribuição como padrão.'),
-          duration: const Duration(seconds: 5),
-        ),
-      );
+      widget.pedido.notifyListeners();
+      widget.savePersistedData?.call(widget.pedido);
     }
   }
 
@@ -325,21 +367,29 @@ class _ShippingSectionState extends State<ShippingSection> {
                       setState(() {
                         _shippingMethod = value;
                         if (_shippingMethod == 'pickup') {
-                          _pickupStore = _pickupStores.contains(widget.pedido.storeFinal) ? widget.pedido.storeFinal : _pickupStores.first;
+                          _pickupStore = _pickupStores.first;
                           _storeFinal = _pickupStore;
-                          _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '';
-                          widget.onShippingCostUpdated(0.0);
+                          _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '86261';
                           widget.pedido.shippingCost = 0.0;
                           widget.pedido.shippingCostController.text = '0.00';
+                          widget.pedido.storeFinal = _storeFinal;
+                          widget.pedido.pickupStoreId = _pickupStoreId;
                         } else {
                           _pickupStore = '';
                           _storeFinal = '';
                           _pickupStoreId = '';
+                          widget.pedido.storeFinal = '';
+                          widget.pedido.pickupStoreId = '';
+                          widget.pedido.shippingCost = 0.0;
+                          widget.pedido.shippingCostController.text = '0.00';
                         }
                       });
                       widget.onShippingMethodUpdated(_shippingMethod);
                       widget.onStoreUpdated(_storeFinal, _pickupStoreId);
-                      _fetchStoreDecision(widget.cep);
+                      widget.onShippingCostUpdated(widget.pedido.shippingCost);
+                      widget.pedido.notifyListeners();
+                      logToFile('Shipping method changed to $_shippingMethod, storeFinal: $_storeFinal, pickupStoreId: $_pickupStoreId, shippingCost: ${widget.pedido.shippingCost}');
+                      widget.savePersistedData?.call(widget.pedido);
                     }
                   });
                 }
@@ -388,17 +438,20 @@ class _ShippingSectionState extends State<ShippingSection> {
                 }).toList(),
                 onChanged: (value) {
                   if (value != null && mounted) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      setState(() {
-                        _pickupStore = value;
-                        _storeFinal = _pickupStore;
-                        _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '';
-                      });
-                      widget.onStoreUpdated(_storeFinal, _pickupStoreId);
+                    setState(() {
+                      _pickupStore = value;
+                      _storeFinal = _pickupStore;
+                      _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '86261';
                       widget.pedido.storeFinal = _storeFinal;
                       widget.pedido.pickupStoreId = _pickupStoreId;
-                      _fetchStoreDecision(widget.cep);
+                      widget.pedido.shippingCost = 0.0;
+                      widget.pedido.shippingCostController.text = '0.00';
                     });
+                    widget.onStoreUpdated(_storeFinal, _pickupStoreId);
+                    widget.onShippingCostUpdated(0.0);
+                    widget.pedido.notifyListeners();
+                    logToFile('Store changed to $_pickupStore, storeFinal: $_storeFinal, pickupStoreId: $_pickupStoreId, shippingCost: 0.0');
+                    widget.savePersistedData?.call(widget.pedido);
                   }
                 },
                 validator: (value) => _shippingMethod == 'pickup' && (value == null || value.isEmpty) ? 'Por favor, selecione uma loja para retirada' : null,
