@@ -122,72 +122,53 @@ class _SchedulingSectionState extends State<SchedulingSection> {
   }
 
   Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
-      locale: const Locale('pt', 'BR'),
-      builder: (context, child) {
-        final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme(
-              brightness: isDarkMode ? Brightness.dark : Brightness.light,
-              primary: const Color(0xFFF28C38),
-              onPrimary: Colors.white,
-              secondary: const Color(0xFFFFCC80),
-              onSecondary: Colors.black87,
-              surface: isDarkMode ? Colors.grey[800]! : Colors.white,
-              onSurface: isDarkMode ? Colors.white70 : Colors.black87,
-              background: isDarkMode ? Colors.grey[900]! : Colors.white,
-              onBackground: isDarkMode ? Colors.white70 : Colors.black87,
-              error: Colors.red.shade700,
-              onError: Colors.white,
-            ),
-            dialogBackgroundColor: isDarkMode ? Colors.grey[800] : Colors.white,
-            textButtonTheme: TextButtonThemeData(
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFFF28C38),
-                textStyle: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
-              ),
+  final DateTime? picked = await showDatePicker(
+    context: context,
+    initialDate: _selectedDate ?? DateTime.now(),
+    firstDate: DateTime.now(),
+    lastDate: DateTime.now().add(const Duration(days: 30)),
+    locale: const Locale('pt', 'BR'),
+    cancelText: 'Cancelar',  // Adicione isso para customizar o botão de cancelar
+    confirmText: 'Confirmar',  // Adicione isso para customizar o botão de confirmar
+    builder: (context, child) {
+      final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+      return Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: ColorScheme(
+            brightness: isDarkMode ? Brightness.dark : Brightness.light,
+            primary: const Color(0xFFF28C38),
+            onPrimary: Colors.white,
+            secondary: const Color(0xFFFFCC80),
+            onSecondary: Colors.black87,
+            surface: isDarkMode ? Colors.grey[800]! : Colors.white,
+            onSurface: isDarkMode ? Colors.white70 : Colors.black87,
+            background: isDarkMode ? Colors.grey[900]! : Colors.white,
+            onBackground: isDarkMode ? Colors.white70 : Colors.black87,
+            error: Colors.red.shade700,
+            onError: Colors.white,
+          ),
+          dialogBackgroundColor: isDarkMode ? Colors.grey[800] : Colors.white,
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFF28C38),
+              textStyle: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
             ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              child!,
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancelar'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(_selectedDate),
-                      child: const Text('Confirmar'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+        ),
+        child: child!,  // Remova a Column e os botões extras; use apenas o child original
+      );
+    },
+  );
 
-    if (picked != null && picked != _selectedDate && mounted) {
-      setState(() {
-        _selectedDate = picked;
-        _updateTimeSlots();
-      });
-      _updateParent();
-      await logToFile('Data selecionada: ${DateFormat('dd/MM/yyyy').format(picked)}');
-    }
+  if (picked != null && picked != _selectedDate && mounted) {
+    setState(() {
+      _selectedDate = picked;
+      _updateTimeSlots();
+    });
+    _updateParent();
+    await logToFile('Data selecionada: ${DateFormat('dd/MM/yyyy').format(picked)}');
   }
+}
 
   void _updateParent() {
     if (mounted && _selectedDate != null && _selectedTimeSlot != null) {
