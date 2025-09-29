@@ -5,12 +5,15 @@ import '../utils/log_utils.dart'; // Importar log_utils para usar logToFile
 
 class CustomerSection extends StatefulWidget {
   final TextEditingController phoneController;
-  final Function(String) onPhoneChanged;
+  final Function(String)? onPhoneChanged; // Mantido para compatibilidade, mas opcional
+  final Function(String)? onPhoneSubmitted; // Novo callback
   final VoidCallback onFetchCustomer;
   final TextEditingController nameController;
-  final Function(String) onNameChanged;
+  final Function(String)? onNameChanged; // Mantido para compatibilidade, mas opcional
+  final Function(String)? onNameSubmitted; // Novo callback
   final TextEditingController emailController;
-  final Function(String) onEmailChanged;
+  final Function(String)? onEmailChanged; // Mantido para compatibilidade, mas opcional
+  final Function(String)? onEmailSubmitted; // Novo callback
   final String selectedVendedor;
   final Function(String?) onVendedorChanged;
   final String? Function(String?)? validator;
@@ -20,11 +23,14 @@ class CustomerSection extends StatefulWidget {
     Key? key,
     required this.phoneController,
     required this.onPhoneChanged,
+    this.onPhoneSubmitted,
     required this.onFetchCustomer,
     required this.nameController,
     required this.onNameChanged,
+    this.onNameSubmitted,
     required this.emailController,
     required this.onEmailChanged,
+    this.onEmailSubmitted,
     required this.selectedVendedor,
     required this.onVendedorChanged,
     this.validator,
@@ -47,7 +53,6 @@ class _CustomerSectionState extends State<CustomerSection> {
   void initState() {
     super.initState();
     widget.phoneController.addListener(() {
-      // Removido setState para evitar reconstruções desnecessárias
       logToFile('phoneController changed: ${widget.phoneController.text}');
     });
   }
@@ -64,7 +69,6 @@ class _CustomerSectionState extends State<CustomerSection> {
     final cleanedPhone = widget.phoneController.text.replaceAll(RegExp(r'\D'), '').trim();
     final isPhoneValid = cleanedPhone.length == 11;
 
-    // Mover o log para logToFile em vez de debugPrint
     logToFile('Phone: ${widget.phoneController.text}, Cleaned: $cleanedPhone, isPhoneValid: $isPhoneValid');
 
     final List<String> vendedores = ['Alline', 'Cássio Vinicius', 'Maria Eduarda'];
@@ -135,7 +139,7 @@ class _CustomerSectionState extends State<CustomerSection> {
                   ),
                   keyboardType: TextInputType.phone,
                   inputFormatters: [phoneMaskFormatter],
-                  onChanged: widget.onPhoneChanged,
+                  onFieldSubmitted: widget.onPhoneSubmitted,
                   validator: widget.validator,
                 ),
               ),
@@ -260,7 +264,7 @@ class _CustomerSectionState extends State<CustomerSection> {
               fontSize: 14,
               color: isDarkMode ? Colors.white : Colors.black87,
             ),
-            onChanged: widget.onNameChanged,
+            onFieldSubmitted: widget.onNameSubmitted,
             validator: null,
           ),
           const SizedBox(height: 20),
@@ -300,7 +304,7 @@ class _CustomerSectionState extends State<CustomerSection> {
               color: isDarkMode ? Colors.white : Colors.black87,
             ),
             keyboardType: TextInputType.emailAddress,
-            onChanged: widget.onEmailChanged,
+            onFieldSubmitted: widget.onEmailSubmitted,
             validator: null,
           ),
         ],

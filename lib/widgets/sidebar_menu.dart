@@ -182,21 +182,15 @@ class _SidebarMenuState extends State<SidebarMenu> with SingleTickerProviderStat
                     padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                     margin: const EdgeInsets.symmetric(horizontal: 8),
                     decoration: BoxDecoration(
-                      color: isSelected ? primaryColor.withOpacity(0.1) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: isSelected ? primaryColor.withOpacity(0.4) : Colors.grey.withOpacity(0.2),
-                      ),
-                      boxShadow: isSelected
-                          ? [
-                              BoxShadow(
-                                color: primaryColor.withOpacity(0.2),
-                                blurRadius: 8,
-                                offset: const Offset(0, 3),
-                              ),
-                            ]
-                          : [],
-                    ),
+  color: isSelected ? primaryColor.withOpacity(0.15) : Colors.transparent,
+  borderRadius: BorderRadius.circular(14),
+  border: Border.all(
+    color: isSelected
+        ? primaryColor.withOpacity(0.5)
+        : Colors.grey.withOpacity(0.2),
+  ),
+),
+
                     child: Row(
                       children: [
                         Container(

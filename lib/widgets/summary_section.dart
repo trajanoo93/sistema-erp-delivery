@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:erp_painel_delivery/models/pedido_state.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import '../utils/log_utils.dart';
+import '../models/pedido_state.dart';
 
-class SummarySection extends StatelessWidget {
+class SummarySection extends StatefulWidget {
   final double totalOriginal;
   final bool isCouponValid;
   final String couponCode;
@@ -32,8 +32,15 @@ class SummarySection extends StatelessWidget {
     this.resultMessage,
   }) : super(key: key);
 
+  @override
+  _SummarySectionState createState() => _SummarySectionState();
+}
+
+class _SummarySectionState extends State<SummarySection> {
+  bool _isPressed = false;
+
   Future<void> _sendPaymentMessage(BuildContext context) async {
-    String? phoneNumber = pedido.lastPhoneNumber ?? pedido.phoneController.text.replaceAll(RegExp(r'\D'), '');
+    String? phoneNumber = widget.pedido.lastPhoneNumber ?? widget.pedido.phoneController.text.replaceAll(RegExp(r'\D'), '');
     if (phoneNumber.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Por favor, insira o número de telefone do cliente.')),
@@ -43,7 +50,7 @@ class SummarySection extends StatelessWidget {
     }
 
     phoneNumber = '+55$phoneNumber';
-    if (paymentInstructions == null) {
+    if (widget.paymentInstructions == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nenhuma instrução de pagamento disponível.')),
       );
@@ -53,11 +60,11 @@ class SummarySection extends StatelessWidget {
 
     String formattedMessage;
     try {
-      final paymentData = jsonDecode(paymentInstructions!);
+      final paymentData = jsonDecode(widget.paymentInstructions!);
       formattedMessage = paymentData['type'] == 'pix' ? paymentData['text'] ?? '' : paymentData['url'] ?? '';
       await logToFile('Parsed paymentInstructions: $paymentData, formattedMessage: $formattedMessage');
     } catch (e) {
-      formattedMessage = paymentInstructions!;
+      formattedMessage = widget.paymentInstructions!;
       await logToFile('Erro ao parsear paymentInstructions: $e, usando fallback: $formattedMessage');
     }
 
@@ -118,15 +125,15 @@ class SummarySection extends StatelessWidget {
 
     String? paymentText;
     bool isPix = false;
-    if (paymentInstructions != null) {
+    if (widget.paymentInstructions != null) {
       try {
-        final paymentData = jsonDecode(paymentInstructions!);
+        final paymentData = jsonDecode(widget.paymentInstructions!);
         paymentText = paymentData['type'] == 'pix' ? paymentData['text'] : paymentData['url'];
         isPix = paymentData['type'] == 'pix';
         logToFile('Payment instructions parsed: type=${paymentData['type']}, text=${paymentData['text']}, url=${paymentData['url']}');
       } catch (e) {
-        paymentText = paymentInstructions;
-        isPix = !paymentInstructions!.contains('checkout.stripe.com');
+        paymentText = widget.paymentInstructions;
+        isPix = !widget.paymentInstructions!.contains('checkout.stripe.com');
         logToFile('Erro ao parsear paymentInstructions: $e, usando fallback: $paymentText, isPix: $isPix');
       }
     } else {
@@ -137,82 +144,90 @@ class SummarySection extends StatelessWidget {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
-        color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        gradient: LinearGradient(
+          colors: isDarkMode
+              ? [Colors.black.withOpacity(0.3), Colors.black.withOpacity(0.1)]
+              : [Colors.white, Colors.orange.shade50],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 12,
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
             offset: const Offset(0, 4),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(20.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              'Resumo do Pedido',
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: isDarkMode ? Colors.white : Colors.black87,
-              ),
+          Text(
+            'Resumo do Pedido',
+            style: GoogleFonts.poppins(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: isDarkMode ? Colors.white : Colors.black87,
+              letterSpacing: 0.5,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           _buildSummaryRow(
             context,
             primaryColor: primaryColor,
-            icon: Icons.location_on,
+            icon: Icons.store,
             label: 'Loja Selecionada',
-            value: pedido.storeFinal.isNotEmpty ? '📍 ${pedido.storeFinal}' : 'Aguardando cálculo',
+            value: widget.pedido.storeFinal.isNotEmpty ? '📍 ${widget.pedido.storeFinal}' : 'Aguardando cálculo',
             isDarkMode: isDarkMode,
             valueStyle: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           _buildSummaryRow(
-            context,
-            primaryColor: primaryColor,
-            label: 'Total dos Produtos',
-            value: 'R\$ ${totalOriginal.toStringAsFixed(2)}',
-            isDarkMode: isDarkMode,
-          ),
+  context,
+  primaryColor: primaryColor,
+  label: 'Total dos Produtos',
+  value: 'R\$ ${widget.pedido.products.fold<double>(0.0, (sum, product) => sum + (product['price'] * (product['quantity'] ?? 1))).toStringAsFixed(2)}',
+  isDarkMode: isDarkMode,
+),
           _buildSummaryRow(
             context,
             primaryColor: primaryColor,
             label: 'Custo de Envio',
-            value: 'R\$ ${pedido.shippingCost.toStringAsFixed(2)}',
+            value: 'R\$ ${widget.pedido.shippingCost.toStringAsFixed(2)}',
             isDarkMode: isDarkMode,
           ),
-          if (isCouponValid) ...[
-            const SizedBox(height: 8),
+          if (widget.isCouponValid) ...[
+            const SizedBox(height: 12),
             _buildSummaryRow(
               context,
               primaryColor: primaryColor,
-              icon: Icons.discount,
-              label: 'Desconto ($couponCode)',
-              value: '- R\$ ${discountAmount.toStringAsFixed(2)}',
+              icon: Icons.discount_outlined,
+              label: 'Desconto (${widget.couponCode})',
+              value: '- R\$ ${widget.discountAmount.toStringAsFixed(2)}',
               isDarkMode: isDarkMode,
               valueStyle: GoogleFonts.poppins(fontSize: 16, color: successColor, fontWeight: FontWeight.w600),
             ),
           ],
-          const SizedBox(height: 8),
-          _buildSummaryRow(
-            context,
-            primaryColor: primaryColor,
-            label: 'Total com Desconto',
-            value: 'R\$ ${totalWithDiscount.toStringAsFixed(2)}',
-            isDarkMode: isDarkMode,
-            valueStyle: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700),
+          const SizedBox(height: 12),
+          AnimatedOpacity(
+            opacity: widget.totalWithDiscount > 0 ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 500),
+            child: _buildSummaryRow(
+              context,
+              primaryColor: primaryColor,
+              label: 'Total com Desconto',
+              value: 'R\$ ${widget.totalWithDiscount.toStringAsFixed(2)}',
+              isDarkMode: isDarkMode,
+              valueStyle: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: primaryColor),
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           DropdownButtonFormField<String>(
-            value: pedido.availablePaymentMethods.isNotEmpty &&
-                    pedido.availablePaymentMethods.any((m) => m['title'] == pedido.selectedPaymentMethod)
-                ? pedido.selectedPaymentMethod
+            value: widget.pedido.availablePaymentMethods.isNotEmpty &&
+                    widget.pedido.availablePaymentMethods.any((m) => m['title'] == widget.pedido.selectedPaymentMethod)
+                ? widget.pedido.selectedPaymentMethod
                 : null,
             decoration: InputDecoration(
               labelText: 'Método de Pagamento',
@@ -235,9 +250,10 @@ class SummarySection extends StatelessWidget {
               prefixIcon: Icon(Icons.payment, color: primaryColor),
               filled: true,
               fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              floatingLabelBehavior: FloatingLabelBehavior.always,
             ),
-            items: pedido.availablePaymentMethods.map((method) {
+            items: widget.pedido.availablePaymentMethods.map((method) {
               return DropdownMenuItem<String>(
                 value: method['title'],
                 child: Text(
@@ -248,26 +264,32 @@ class SummarySection extends StatelessWidget {
             }).toList(),
             onChanged: (value) {
               if (value != null) {
-                pedido.selectedPaymentMethod = value;
-                pedido.notifyListeners();
+                widget.pedido.selectedPaymentMethod = value;
+                widget.pedido.notifyListeners();
+                logToFile('Método de pagamento selecionado: $value');
               }
             },
             validator: (value) => value == null ? 'Selecione um método de pagamento' : null,
             hint: Text(
-              pedido.schedulingDate.isEmpty || pedido.schedulingTime.isEmpty
+              widget.pedido.schedulingDate.isEmpty || widget.pedido.schedulingTime.isEmpty
                   ? 'Selecione data e horário primeiro'
                   : 'Selecione o método de pagamento',
-              style: GoogleFonts.poppins(color: isDarkMode ? Colors.white70 : Colors.black54),
+              style: GoogleFonts.poppins(fontSize: 14, color: isDarkMode ? Colors.white70 : Colors.black54),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: isLoading || pedido.selectedPaymentMethod.isEmpty
+            child: GestureDetector(
+              onTapDown: (_) => widget.isLoading || widget.pedido.selectedPaymentMethod.isEmpty
+                  ? null
+                  : setState(() => _isPressed = true),
+              onTapUp: (_) => setState(() => _isPressed = false),
+              onTapCancel: () => setState(() => _isPressed = false),
+              onTap: widget.isLoading || widget.pedido.selectedPaymentMethod.isEmpty
                   ? null
                   : () async {
-                      await onCreateOrder();
+                      await widget.onCreateOrder();
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
@@ -279,37 +301,65 @@ class SummarySection extends StatelessWidget {
                         ),
                       );
                     },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 3,
-                shadowColor: Colors.black.withOpacity(0.2),
-              ),
-              child: isLoading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                    )
-                  : Text(
-                      'Criar Pedido',
-                      style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
+              child: AnimatedScale(
+                scale: _isPressed ? 0.95 : 1.0,
+                duration: const Duration(milliseconds: 100),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [primaryColor, primaryColor.withOpacity(0.8)],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
                     ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: primaryColor.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: widget.isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Criar Pedido',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
             ),
           ),
-          if (resultMessage != null) ...[
-            const SizedBox(height: 16),
-            AnimatedOpacity(
-              opacity: resultMessage!.isNotEmpty ? 1.0 : 0.0,
+          if (widget.resultMessage != null) ...[
+            const SizedBox(height: 20),
+            AnimatedSlide(
+              offset: widget.resultMessage!.isNotEmpty ? Offset.zero : const Offset(0, 0.2),
               duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: resultMessage!.contains('Erro') ? Colors.red.shade50 : Colors.green.shade50,
+                  color: widget.resultMessage!.contains('Erro') ? Colors.red.shade50 : Colors.green.shade50,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: resultMessage!.contains('Erro') ? Colors.red.shade200 : Colors.green.shade200),
+                  border: Border.all(color: widget.resultMessage!.contains('Erro') ? Colors.red.shade200 : Colors.green.shade200),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.1),
@@ -321,18 +371,18 @@ class SummarySection extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(
-                      resultMessage!.contains('Erro') ? Icons.error : Icons.check_circle,
-                      color: resultMessage!.contains('Erro') ? Colors.red.shade600 : successColor,
+                      widget.resultMessage!.contains('Erro') ? Icons.error : Icons.check_circle,
+                      color: widget.resultMessage!.contains('Erro') ? Colors.red.shade600 : successColor,
                       size: 24,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        resultMessage!,
+                        widget.resultMessage!,
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
-                          color: resultMessage!.contains('Erro') ? Colors.red.shade800 : Colors.green.shade800,
+                          color: widget.resultMessage!.contains('Erro') ? Colors.red.shade800 : Colors.green.shade800,
                         ),
                       ),
                     ),
@@ -341,17 +391,18 @@ class SummarySection extends StatelessWidget {
               ),
             ),
           ],
-          if (paymentInstructions != null && paymentText != null && paymentText.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            AnimatedOpacity(
-              opacity: paymentText!.isNotEmpty ? 1.0 : 0.0,
+          if (widget.paymentInstructions != null && paymentText != null && paymentText.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            AnimatedSlide(
+              offset: paymentText!.isNotEmpty ? Offset.zero : const Offset(0, 0.2),
               duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade50,
+                  color: isPix ? Colors.blue.shade50 : Colors.green.shade50,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.green.shade200),
+                  border: Border.all(color: isPix ? Colors.blue.shade200 : Colors.green.shade200),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.1),
@@ -366,17 +417,17 @@ class SummarySection extends StatelessWidget {
                     Row(
                       children: [
                         Icon(
-                          isPix ? Icons.qr_code : Icons.credit_card,
-                          color: successColor,
-                          size: 24,
+                          isPix ? Icons.qr_code_scanner : Icons.credit_card,
+                          color: isPix ? Colors.blue.shade600 : successColor,
+                          size: 28,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 10),
                         Text(
-                          isPix ? 'Pagamento via Pix' : 'Pagamento via Cartão de Crédito',
+                          isPix ? 'Pagamento via Pix' : 'Pagamento via Cartão',
                           style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: successColor,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: isDarkMode ? Colors.white : Colors.black87,
                           ),
                         ),
                       ],
@@ -391,41 +442,48 @@ class SummarySection extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            paymentText,
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: isDarkMode ? Colors.white : Colors.black87,
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isDarkMode ? Colors.grey[800] : Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: isPix ? Colors.blue.shade200 : Colors.green.shade200),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              paymentText,
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: isDarkMode ? Colors.white : Colors.black87,
+                              ),
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.copy, size: 20),
-                          onPressed: () => _copyToClipboard(context, paymentText),
-                          tooltip: isPix ? 'Copiar Código Pix' : 'Copiar Link de Pagamento',
-                          color: Colors.blue.shade600,
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: Icon(Icons.copy, size: 20, color: isPix ? Colors.blue.shade600 : successColor),
+                            onPressed: () => _copyToClipboard(context, paymentText),
+                            tooltip: isPix ? 'Copiar Código Pix' : 'Copiar Link de Pagamento',
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
                         onPressed: () => _sendPaymentMessage(context),
-                        icon: const Icon(Icons.message, size: 20, color: Colors.white),
+                        icon: Icon(Icons.send, size: 20, color: Colors.white),
                         label: Text(
                           'Enviar via WhatsApp',
-                          style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+                          style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: successColor,
+                          backgroundColor: isPix ? Colors.blue.shade600 : successColor,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -447,7 +505,7 @@ class SummarySection extends StatelessWidget {
   Widget _buildSummaryRow(
     BuildContext context, {
     required Color primaryColor,
-    IconData? icon, // Ícone agora é opcional
+    IconData? icon,
     required String label,
     required String value,
     required bool isDarkMode,

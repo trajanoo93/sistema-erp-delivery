@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:erp_painel_delivery/product_selection_dialog.dart';
 
 class ProductSection extends StatefulWidget {
@@ -52,36 +53,37 @@ class _ProductSectionState extends State<ProductSection> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (product['image'] != null && product['image'].toString().isNotEmpty)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          product['image'],
-                          width: 50,
-                          height: 50,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Container(
-                            width: 50,
-                            height: 50,
-                            color: Colors.grey.shade200,
-                            child: const Icon(
-                              Icons.image_not_supported,
-                              color: Colors.grey,
-                              size: 30,
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      Container(
-                        width: 50,
-                        height: 50,
-                        color: Colors.grey.shade200,
-                        child: const Icon(
-                          Icons.image_not_supported,
-                          color: Colors.grey,
-                          size: 30,
-                        ),
-                      ),
+  ClipRRect(
+    borderRadius: BorderRadius.circular(8),
+    child: CachedNetworkImage(
+      imageUrl: product['image'],
+      width: 50,
+      height: 50,
+      fit: BoxFit.cover,
+      placeholder: (context, url) => const CircularProgressIndicator(),
+      errorWidget: (context, url, error) => Container(
+        width: 50,
+        height: 50,
+        color: Colors.grey.shade200,
+        child: const Icon(
+          Icons.image_not_supported,
+          color: Colors.grey,
+          size: 30,
+        ),
+      ),
+    ),
+  )
+else
+  Container(
+    width: 50,
+    height: 50,
+    color: Colors.grey.shade200,
+    child: const Icon(
+      Icons.image_not_supported,
+      color: Colors.grey,
+      size: 30,
+    ),
+  ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(

@@ -303,19 +303,19 @@ class _ShippingSectionState extends State<ShippingSection> {
     final primaryColor = const Color(0xFFF28C38);
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      decoration: BoxDecoration(
-        color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+  duration: const Duration(milliseconds: 300),
+  curve: Curves.easeOutCubic,
+  decoration: BoxDecoration(
+    color: Colors.white, // Forçar fundo branco em ambos os temas
+    borderRadius: BorderRadius.circular(14),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withOpacity(0.05),
+        blurRadius: 12,
+        offset: const Offset(0, 4),
       ),
+    ],
+  ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

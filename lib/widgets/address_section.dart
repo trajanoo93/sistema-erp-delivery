@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
@@ -57,6 +58,12 @@ class _AddressSectionState extends State<AddressSection> {
   bool _isEditingShippingCost = false;
   double _tempShippingCost = 0.0;
   final _shippingCostController = TextEditingController();
+  late VoidCallback _cepListener;
+  late VoidCallback _addressListener;
+  late VoidCallback _numberListener;
+  late VoidCallback _complementListener;
+  late VoidCallback _neighborhoodListener;
+  late VoidCallback _cityListener;
 
   final _cepMaskFormatter = MaskTextInputFormatter(
     mask: '#####-###',
@@ -67,92 +74,106 @@ class _AddressSectionState extends State<AddressSection> {
   @override
   void initState() {
     super.initState();
-    widget.cepController.addListener(_onCepChanged);
-    widget.addressController.addListener(_onFieldChanged);
-    widget.numberController.addListener(_onFieldChanged);
-    widget.complementController.addListener(_onFieldChanged);
-    widget.neighborhoodController.addListener(_onFieldChanged);
-    widget.cityController.addListener(_onFieldChanged);
+    _setupListeners();
     _shippingCostController.text = widget.pedido?.shippingCostController.text ?? widget.externalShippingCost.toStringAsFixed(2);
-    // Verificar shippingMethod na inicialização
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.shippingMethod == 'pickup' && widget.pedido?.cepController.text.isNotEmpty == true) {
         resetSection();
         logToFile('Reset AddressSection due to shippingMethod change to pickup');
       }
+      logToFile('AddressSection initialized: cep=${widget.cepController.text}, shippingMethod=${widget.shippingMethod}, listenerActive=${widget.cepController.hasListeners}');
     });
   }
 
-  void _onFieldChanged() {
-    widget.onChanged(widget.cepController.text);
+  void _setupListeners() {
+    _cepListener = () => _onCepChanged(widget.cepController.text);
+    _addressListener = () => _onFieldChanged(widget.addressController.text);
+    _numberListener = () => _onFieldChanged(widget.numberController.text);
+    _complementListener = () => _onFieldChanged(widget.complementController.text);
+    _neighborhoodListener = () => _onFieldChanged(widget.neighborhoodController.text);
+    _cityListener = () => _onFieldChanged(widget.cityController.text);
+
+    widget.cepController.addListener(_cepListener);
+    widget.addressController.addListener(_addressListener);
+    widget.numberController.addListener(_numberListener);
+    widget.complementController.addListener(_complementListener);
+    widget.neighborhoodController.addListener(_neighborhoodListener);
+    widget.cityController.addListener(_cityListener);
+  }
+
+  void _onFieldChanged(String value) {
+    widget.onChanged(value);
     widget.savePersistedData?.call();
+  }
+
+  void _onCepChanged(String cep) {
+    final cleanCep = cep.replaceAll(RegExp(r'\D'), '').trim();
+    logToFile('CEP listener triggered: $cleanCep, shippingMethod: ${widget.shippingMethod}, lastCep: ${widget.pedido?.lastCep}');
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 800), () async {
+      if (cleanCep.length == 8 && cleanCep != widget.pedido?.lastCep) {
+        widget.pedido?.lastCep = cleanCep;
+        await _fetchAddressFromCep(cleanCep);
+        if (widget.shippingMethod == 'delivery' && widget.checkStoreByCep != null) {
+          await _debouncedCheckStoreByCep();
+        } else if (widget.shippingMethod == 'pickup') {
+          final storeFinal = widget.pedido?.storeFinal.isNotEmpty == true &&
+                  ['Central Distribuição (Sagrada Família)', 'Unidade Barreiro', 'Unidade Sion']
+                      .contains(widget.pedido?.storeFinal)
+              ? widget.pedido!.storeFinal
+              : 'Central Distribuição (Sagrada Família)';
+          final storeId = widget.pedido?.pickupStoreId.isNotEmpty == true &&
+                  ['86261', '110727', '127163'].contains(widget.pedido?.pickupStoreId)
+              ? widget.pedido!.pickupStoreId
+              : '86261';
+          widget.onShippingCostUpdated(0.0);
+          widget.onStoreUpdated(storeFinal, storeId);
+          setState(() {
+            _storeIndication = 'Retirada na loja selecionada: $storeFinal';
+          });
+          if (widget.pedido != null) {
+            widget.pedido!.shippingCost = 0.0;
+            widget.pedido!.shippingCostController.text = '0.00';
+            widget.pedido!.storeFinal = storeFinal;
+            widget.pedido!.pickupStoreId = storeId;
+          }
+          await widget.savePersistedData?.call();
+          logToFile('Pickup mode in _onCepChanged: storeFinal=$storeFinal, pickupStoreId=$storeId, shippingCost=0.0');
+        }
+      } else if (cleanCep.length != 8) {
+        widget.onShippingCostUpdated(0.0);
+        widget.onStoreUpdated('', '');
+        setState(() {
+          _storeIndication = null;
+        });
+        if (widget.pedido != null) {
+          widget.pedido!.shippingCost = 0.0;
+          widget.pedido!.shippingCostController.text = '0.00';
+          widget.pedido!.storeFinal = '';
+          widget.pedido!.pickupStoreId = '';
+        }
+        await widget.savePersistedData?.call();
+        logToFile('CEP inválido ou vazio: reset shippingCost=0.0, storeFinal="", pickupStoreId=""');
+      }
+    });
   }
 
   @override
   void dispose() {
-    widget.cepController.removeListener(_onCepChanged);
-    widget.addressController.removeListener(_onFieldChanged);
-    widget.numberController.removeListener(_onFieldChanged);
-    widget.complementController.removeListener(_onFieldChanged);
-    widget.neighborhoodController.removeListener(_onFieldChanged);
-    widget.cityController.removeListener(_onFieldChanged);
+    widget.cepController.removeListener(_cepListener);
+    widget.addressController.removeListener(_addressListener);
+    widget.numberController.removeListener(_numberListener);
+    widget.complementController.removeListener(_complementListener);
+    widget.neighborhoodController.removeListener(_neighborhoodListener);
+    widget.cityController.removeListener(_cityListener);
     _debounce?.cancel();
     _shippingCostController.dispose();
     super.dispose();
   }
 
-  void _onCepChanged() {
-    widget.onChanged(widget.cepController.text);
-    final cleanCep = widget.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
-    print('CEP alterado: $cleanCep, shippingMethod: ${widget.shippingMethod}');
-    if (cleanCep.length == 8) {
-      _fetchAddressFromCep(cleanCep);
-      if (widget.shippingMethod == 'delivery' && widget.checkStoreByCep != null) {
-        _debouncedCheckStoreByCep();
-      } else if (widget.shippingMethod == 'pickup') {
-        final storeFinal = widget.pedido?.storeFinal.isNotEmpty == true &&
-                ['Central Distribuição (Sagrada Família)', 'Unidade Barreiro', 'Unidade Sion']
-                    .contains(widget.pedido?.storeFinal)
-            ? widget.pedido!.storeFinal
-            : 'Central Distribuição (Sagrada Família)';
-        final storeId = widget.pedido?.pickupStoreId.isNotEmpty == true &&
-                ['86261', '110727', '127163'].contains(widget.pedido?.pickupStoreId)
-            ? widget.pedido!.pickupStoreId
-            : '86261';
-        widget.onShippingCostUpdated(0.0);
-        widget.onStoreUpdated(storeFinal, storeId);
-        setState(() {
-          _storeIndication = 'Retirada na loja selecionada: $storeFinal';
-        });
-        if (widget.pedido != null) {
-          widget.pedido!.shippingCost = 0.0;
-          widget.pedido!.shippingCostController.text = '0.00';
-          widget.pedido!.storeFinal = storeFinal;
-          widget.pedido!.pickupStoreId = storeId;
-        }
-        widget.savePersistedData?.call();
-        logToFile('Pickup mode in _onCepChanged: storeFinal=$storeFinal, pickupStoreId=$storeId, shippingCost=0.0');
-      }
-    } else {
-      widget.onShippingCostUpdated(0.0);
-      widget.onStoreUpdated('', '');
-      setState(() {
-        _storeIndication = null;
-      });
-      if (widget.pedido != null) {
-        widget.pedido!.shippingCost = 0.0;
-        widget.pedido!.shippingCostController.text = '0.00';
-        widget.pedido!.storeFinal = '';
-        widget.pedido!.pickupStoreId = '';
-      }
-      widget.savePersistedData?.call();
-      logToFile('CEP inválido ou vazio: reset shippingCost=0.0, storeFinal="", pickupStoreId=""');
-    }
-  }
-
-  void _debouncedCheckStoreByCep() {
+  Future<void> _debouncedCheckStoreByCep() async {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () async {
+    _debounce = Timer(const Duration(milliseconds: 800), () async {
       if (mounted && widget.checkStoreByCep != null) {
         await widget.checkStoreByCep!();
         if (mounted) {
@@ -190,7 +211,7 @@ class _AddressSectionState extends State<AddressSection> {
                     : null;
           });
           print('Atualizado após debounce: cost=$cost, storeFinal=$storeFinal, storeId=$storeId, _storeIndication=$_storeIndication');
-          widget.savePersistedData?.call();
+          await widget.savePersistedData?.call();
           logToFile(
               'Debounced checkStoreByCep: shippingMethod=${widget.shippingMethod}, '
               'cost=$cost, storeFinal=$storeFinal, storeId=$storeId, _storeIndication=$_storeIndication');
@@ -222,10 +243,7 @@ class _AddressSectionState extends State<AddressSection> {
             widget.cityController.text = data['localidade'] ?? '';
             widget.complementController.text = data['complemento'] ?? '';
           });
-          widget.onChanged(widget.addressController.text);
-          widget.onChanged(widget.neighborhoodController.text);
-          widget.onChanged(widget.cityController.text);
-          widget.onChanged(widget.complementController.text);
+          widget.onChanged('');
           widget.savePersistedData?.call();
           logToFile('Address updated: logradouro=${data['logradouro']}, bairro=${data['bairro']}, cidade=${data['localidade']}');
         } else {
@@ -291,6 +309,8 @@ class _AddressSectionState extends State<AddressSection> {
       _storeIndication = null;
       _isEditingShippingCost = false;
       _shippingCostController.text = '0.00';
+      _debounce?.cancel();
+      _debounce = null;
     });
     widget.cepController.clear();
     widget.addressController.clear();
@@ -300,18 +320,6 @@ class _AddressSectionState extends State<AddressSection> {
     widget.cityController.clear();
     widget.onShippingCostUpdated(0.0);
     widget.onStoreUpdated('', '');
-    if (widget.pedido != null) {
-      widget.pedido!.cepController.clear();
-      widget.pedido!.addressController.clear();
-      widget.pedido!.numberController.clear();
-      widget.pedido!.complementController.clear();
-      widget.pedido!.neighborhoodController.clear();
-      widget.pedido!.cityController.clear();
-      widget.pedido!.shippingCost = 0.0;
-      widget.pedido!.shippingCostController.text = '0.00';
-      widget.pedido!.storeFinal = widget.shippingMethod == 'pickup' ? 'Central Distribuição (Sagrada Família)' : '';
-      widget.pedido!.pickupStoreId = widget.shippingMethod == 'pickup' ? '86261' : '';
-    }
     widget.savePersistedData?.call();
     widget.onReset?.call();
     logToFile(
@@ -325,7 +333,20 @@ class _AddressSectionState extends State<AddressSection> {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = const Color(0xFFF28C38);
 
-    return Padding(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -361,14 +382,35 @@ class _AddressSectionState extends State<AddressSection> {
                     )
                   : null,
               filled: true,
-              fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+              fillColor: Colors.white,
             ),
             keyboardType: TextInputType.number,
             inputFormatters: [_cepMaskFormatter],
-            onChanged: (value) {
-              _onCepChanged();
+            onFieldSubmitted: (value) {
+              _onCepChanged(value);
+              widget.onChanged(value);
             },
             validator: null,
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                _onCepChanged(widget.cepController.text);
+                widget.onChanged(widget.cepController.text);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(
+                'Consultar CEP',
+                style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
           ),
           if (_storeIndication != null || (widget.shippingMethod == 'delivery' && widget.externalShippingCost > 0)) ...[
             const SizedBox(height: 8),
@@ -378,7 +420,7 @@ class _AddressSectionState extends State<AddressSection> {
                 curve: Curves.easeOutCubic,
                 padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
                 decoration: BoxDecoration(
-                  color: isDarkMode ? primaryColor.withOpacity(0.2) : Colors.orange[50],
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: primaryColor.withOpacity(0.3)),
                 ),
@@ -427,7 +469,7 @@ class _AddressSectionState extends State<AddressSection> {
                     ),
                     prefixIcon: Icon(Icons.monetization_on, color: primaryColor),
                     filled: true,
-                    fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+                    fillColor: Colors.white,
                   ),
                   keyboardType: TextInputType.numberWithOptions(decimal: true),
                   onChanged: (value) {
@@ -459,7 +501,7 @@ class _AddressSectionState extends State<AddressSection> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: isDarkMode ? primaryColor.withOpacity(0.2) : Colors.orange[50],
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(8),
                   border: Border(
                     left: BorderSide(
@@ -518,9 +560,9 @@ class _AddressSectionState extends State<AddressSection> {
                     ),
                     prefixIcon: Icon(Icons.home, color: primaryColor),
                     filled: true,
-                    fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+                    fillColor: Colors.white,
                   ),
-                  onChanged: widget.onChanged,
+                  onFieldSubmitted: _onFieldChanged,
                   validator: null,
                 ),
               ),
@@ -548,11 +590,11 @@ class _AddressSectionState extends State<AddressSection> {
                       borderSide: BorderSide(color: primaryColor, width: 2),
                     ),
                     filled: true,
-                    fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+                    fillColor: Colors.white,
                   ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  onChanged: widget.onChanged,
+                  onFieldSubmitted: _onFieldChanged,
                   validator: null,
                 ),
               ),
@@ -581,9 +623,9 @@ class _AddressSectionState extends State<AddressSection> {
               ),
               prefixIcon: Icon(Icons.edit, color: primaryColor),
               filled: true,
-              fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+              fillColor: Colors.white,
             ),
-            onChanged: widget.onChanged,
+            onFieldSubmitted: _onFieldChanged,
             validator: null,
           ),
           const SizedBox(height: 20),
@@ -609,9 +651,9 @@ class _AddressSectionState extends State<AddressSection> {
               ),
               prefixIcon: Icon(Icons.location_city, color: primaryColor),
               filled: true,
-              fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+              fillColor: Colors.white,
             ),
-            onChanged: widget.onChanged,
+            onFieldSubmitted: _onFieldChanged,
             validator: null,
           ),
           const SizedBox(height: 20),
@@ -637,9 +679,9 @@ class _AddressSectionState extends State<AddressSection> {
               ),
               prefixIcon: Icon(Icons.location_city, color: primaryColor),
               filled: true,
-              fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+              fillColor: Colors.white,
             ),
-            onChanged: widget.onChanged,
+            onFieldSubmitted: _onFieldChanged,
             validator: null,
           ),
         ],

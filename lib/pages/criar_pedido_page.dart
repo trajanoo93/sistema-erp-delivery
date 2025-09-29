@@ -172,60 +172,65 @@ String _paymentSlugFromLabel(String uiLabel) {
 }
 
   Future<void> logToFile(String message) async {
-    try {
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/app_logs.txt');
-      await file.writeAsString('${DateTime.now()} - $message\n', mode: FileMode.append);
-    } catch (e) {
-      debugPrint('Falha ao escrever log: $e');
-    }
+  try {
+    final directory = await getApplicationDocumentsDirectory();
+    final file = File('${directory.path}/app_logs.txt');
+    await file.writeAsString('${DateTime.now()} - $message\n', mode: FileMode.append, encoding: utf8);
+  } catch (e) {
+    debugPrint('Falha ao escrever log: $e');
   }
+}
 
- Future<void> _savePersistedData(PedidoState pedido) async {
-  final prefs = await SharedPreferences.getInstance();
-  final index = _pedidos.indexOf(pedido);
-  if (index >= 0) {
-    if (pedido.shippingMethod == 'pickup') {
-      pedido.shippingCost = 0.0;
-      pedido.shippingCostController.text = '0.00';
-      if (!['Central Distribuição (Sagrada Família)', 'Unidade Barreiro', 'Unidade Sion'].contains(pedido.storeFinal)) {
-        pedido.storeFinal = 'Central Distribuição (Sagrada Família)';
-        pedido.pickupStoreId = '86261';
+ Timer? _saveDebounce; // Adicionado para debounce global
+
+Future<void> _savePersistedData(PedidoState pedido) async {
+  _saveDebounce?.cancel();
+  _saveDebounce = Timer(const Duration(seconds: 1), () async {
+    final prefs = await SharedPreferences.getInstance();
+    final index = _pedidos.indexOf(pedido);
+    if (index >= 0) {
+      if (pedido.shippingMethod == 'pickup') {
+        pedido.shippingCost = 0.0;
+        pedido.shippingCostController.text = '0.00';
+        if (!['Central Distribuição (Sagrada Família)', 'Unidade Barreiro', 'Unidade Sion'].contains(pedido.storeFinal)) {
+          pedido.storeFinal = 'Central Distribuição (Sagrada Família)';
+          pedido.pickupStoreId = '86261';
+        }
       }
+      await prefs.setString('phone_$index', pedido.phoneController.text);
+      await prefs.setString('name_$index', pedido.nameController.text);
+      await prefs.setString('email_$index', pedido.emailController.text);
+      await prefs.setString('cep_$index', pedido.cepController.text);
+      await prefs.setString('address_$index', pedido.addressController.text);
+      await prefs.setString('number_$index', pedido.numberController.text);
+      await prefs.setString('complement_$index', pedido.complementController.text);
+      await prefs.setString('neighborhood_$index', pedido.neighborhoodController.text);
+      await prefs.setString('city_$index', pedido.cityController.text);
+      await prefs.setString('notes_$index', pedido.notesController.text);
+      await prefs.setString('coupon_$index', pedido.couponController.text);
+      await prefs.setString('products_$index', jsonEncode(pedido.products));
+      await prefs.setString('shippingMethod_$index', pedido.shippingMethod);
+      await prefs.setString('paymentMethod_$index', pedido.selectedPaymentMethod);
+      await prefs.setString('availablePaymentMethods_$index', jsonEncode(pedido.availablePaymentMethods));
+      await prefs.setString('paymentAccounts_$index', jsonEncode(pedido.paymentAccounts));
+      await prefs.setDouble('shippingCost_$index', pedido.shippingCost);
+      await prefs.setString('storeFinal_$index', pedido.storeFinal);
+      await prefs.setString('pickupStoreId_$index', pedido.pickupStoreId);
+      await prefs.setBool('showNotesField_$index', pedido.showNotesField);
+      await prefs.setBool('showCouponField_$index', pedido.showCouponField);
+      await prefs.setString('schedulingDate_$index', pedido.schedulingDate);
+      await prefs.setString('schedulingTime_$index', pedido.schedulingTime);
+      await prefs.setBool('isCustomerSectionExpanded_$index', pedido.isCustomerSectionExpanded);
+      await prefs.setBool('isAddressSectionExpanded_$index', pedido.isAddressSectionExpanded);
+      await prefs.setBool('isProductsSectionExpanded_$index', pedido.isProductsSectionExpanded);
+      await prefs.setBool('isShippingSectionExpanded_$index', pedido.isShippingSectionExpanded);
+      await _savePedidos();
+      await logToFile(
+          'Saved persisted data for index $index: shippingMethod=${pedido.shippingMethod}, '
+          'storeFinal=${pedido.storeFinal}, pickupStoreId=${pedido.pickupStoreId}, '
+          'shippingCost=${pedido.shippingCost}');
     }
-    await prefs.setString('phone_$index', pedido.phoneController.text);
-    await prefs.setString('name_$index', pedido.nameController.text);
-    await prefs.setString('email_$index', pedido.emailController.text);
-    await prefs.setString('cep_$index', pedido.cepController.text);
-    await prefs.setString('address_$index', pedido.addressController.text);
-    await prefs.setString('number_$index', pedido.numberController.text);
-    await prefs.setString('complement_$index', pedido.complementController.text);
-    await prefs.setString('neighborhood_$index', pedido.neighborhoodController.text);
-    await prefs.setString('city_$index', pedido.cityController.text);
-    await prefs.setString('notes_$index', pedido.notesController.text);
-    await prefs.setString('coupon_$index', pedido.couponController.text);
-    await prefs.setString('products_$index', jsonEncode(pedido.products));
-    await prefs.setString('shippingMethod_$index', pedido.shippingMethod);
-    await prefs.setString('paymentMethod_$index', pedido.selectedPaymentMethod);
-    await prefs.setString('availablePaymentMethods_$index', jsonEncode(pedido.availablePaymentMethods));
-    await prefs.setString('paymentAccounts_$index', jsonEncode(pedido.paymentAccounts));
-    await prefs.setDouble('shippingCost_$index', pedido.shippingCost);
-    await prefs.setString('storeFinal_$index', pedido.storeFinal);
-    await prefs.setString('pickupStoreId_$index', pedido.pickupStoreId);
-    await prefs.setBool('showNotesField_$index', pedido.showNotesField);
-    await prefs.setBool('showCouponField_$index', pedido.showCouponField);
-    await prefs.setString('schedulingDate_$index', pedido.schedulingDate);
-    await prefs.setString('schedulingTime_$index', pedido.schedulingTime);
-    await prefs.setBool('isCustomerSectionExpanded_$index', pedido.isCustomerSectionExpanded);
-    await prefs.setBool('isAddressSectionExpanded_$index', pedido.isAddressSectionExpanded);
-    await prefs.setBool('isProductsSectionExpanded_$index', pedido.isProductsSectionExpanded);
-    await prefs.setBool('isShippingSectionExpanded_$index', pedido.isShippingSectionExpanded);
-    await _savePedidos();
-    await logToFile(
-        'Saved persisted data for index $index: shippingMethod=${pedido.shippingMethod}, '
-        'storeFinal=${pedido.storeFinal}, pickupStoreId=${pedido.pickupStoreId}, '
-        'shippingCost=${pedido.shippingCost}');
-  }
+  });
 }
 
   @override
@@ -238,15 +243,18 @@ String _paymentSlugFromLabel(String uiLabel) {
   }
 
   Future<void> _initializePedidos() async {
-    await _restorePedidos();
-    if (mounted) {
-      setState(() {
-        _isInitialized = true;
-        _tabController = TabController(length: _pedidos.length, vsync: this);
-        _tabController.addListener(_handleTabSelection);
-      });
-    }
+  await _restorePedidos();
+  if (mounted && _pedidos.isNotEmpty && _pedidos[0].cepController.text.replaceAll(RegExp(r'\D'), '').length == 8) {
+    await _checkStoreByCep();
   }
+  if (mounted) {
+    setState(() {
+      _isInitialized = true;
+      _tabController = TabController(length: _pedidos.length, vsync: this);
+      _tabController.addListener(_handleTabSelection);
+    });
+  }
+}
 
   @override
   void dispose() {
@@ -262,12 +270,16 @@ String _paymentSlugFromLabel(String uiLabel) {
   }
 
   void _handleTabSelection() {
-    if (_tabController.index != _currentTabIndex && mounted) {
-      setState(() {
-        _currentTabIndex = _tabController.index;
-      });
+  if (_tabController.index != _currentTabIndex && mounted) {
+    // Salva o estado da aba atual antes de trocar
+    if (_currentTabIndex < _pedidos.length) {
+      _savePersistedData(_pedidos[_currentTabIndex]);
     }
+    setState(() {
+      _currentTabIndex = _tabController.index;
+    });
   }
+}
 
   void _updateTabs() {
     if (mounted) {
@@ -1088,34 +1100,68 @@ Future<void> _checkStoreByCep() async {
   }
 
   Future<void> _clearLocalData() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    if (mounted) {
-      setState(() {
-        for (var pedido in _pedidos) {
-          pedido.nameController.removeListener(_updateTabs);
-          pedido.dispose();
-        }
-        _pedidos.clear();
-        final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
-        newPedido.nameController.addListener(_updateTabs);
-        newPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-        newPedido.schedulingTime = '09:00 - 12:00';
-        newPedido.shippingMethod = 'delivery';
-        _pedidos.add(newPedido);
-        _currentTabIndex = 0;
-        _tabController.dispose();
-        _tabController = TabController(length: _pedidos.length, vsync: this);
-        _tabController.addListener(_handleTabSelection);
-        _isLoading = false;
-        _resultMessage = null;
-      });
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Dados locais limpos com sucesso')),
-    );
-    await logToFile('Dados locais limpos pelo usuário');
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.clear();
+  if (mounted) {
+    setState(() {
+      for (var pedido in _pedidos) {
+        pedido.nameController.removeListener(_updateTabs);
+        pedido.dispose();
+      }
+      _pedidos.clear();
+      final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
+      newPedido.nameController.addListener(_updateTabs);
+      newPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      newPedido.schedulingTime = '09:00 - 12:00';
+      newPedido.shippingMethod = 'delivery';
+      newPedido.lastCep = '';
+      newPedido.cepController = TextEditingController();
+      newPedido.addressController = TextEditingController();
+      newPedido.numberController = TextEditingController();
+      newPedido.complementController = TextEditingController();
+      newPedido.neighborhoodController = TextEditingController();
+      newPedido.cityController = TextEditingController();
+      newPedido.phoneController = TextEditingController();
+      newPedido.emailController = TextEditingController();
+      newPedido.notesController = TextEditingController();
+      newPedido.couponController = TextEditingController();
+      newPedido.shippingCost = 0.0;
+      newPedido.shippingCostController = TextEditingController(text: '0.00');
+      newPedido.storeFinal = '';
+      newPedido.pickupStoreId = '';
+      newPedido.products = [];
+      newPedido.showNotesField = false;
+      newPedido.showCouponField = false;
+      newPedido.isCouponValid = false;
+      newPedido.discountAmount = 0.0;
+      newPedido.couponErrorMessage = null;
+      newPedido.availablePaymentMethods = [];
+      newPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+      newPedido.isCustomerSectionExpanded = true;
+      newPedido.isAddressSectionExpanded = true;
+      newPedido.isProductsSectionExpanded = true;
+      newPedido.isShippingSectionExpanded = true;
+      _pedidos.add(newPedido);
+      _currentTabIndex = 0;
+      _tabController.dispose();
+      _tabController = TabController(length: _pedidos.length, vsync: this);
+      _tabController.addListener(_handleTabSelection);
+      _isLoading = false;
+      _resultMessage = null;
+    });
+    // Forçar reset do AddressSection após setState
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final tabState = context.findAncestorStateOfType<_KeepAliveTabState>();
+      if (tabState != null) {
+        tabState.resetAddressSection();
+      }
+    });
   }
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Dados locais limpos com sucesso')),
+  );
+  await logToFile('Dados locais limpos pelo usuário');
+}
 
   @override
   Widget build(BuildContext context) {
@@ -1299,22 +1345,26 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
   bool _isEditingShippingCost = false;
   double _tempShippingCost = 0.0;
   final _shippingCostController = TextEditingController();
+  int _addressSectionKeyCounter = 0; // Contador para chave única
 
   void resetAddressSection() {
-    final addressState = _addressSectionKey.currentState;
-    if (addressState != null) {
-      (addressState as dynamic).resetSection();
-      widget.pedido.cepController.clear();
-      widget.pedido.addressController.clear();
-      widget.pedido.numberController.clear();
-      widget.pedido.complementController.clear();
-      widget.pedido.neighborhoodController.clear();
-      widget.pedido.cityController.clear();
+    setState(() {
+      _addressSectionKeyCounter++; // Incrementar para forçar recriação
+      widget.pedido.cepController = TextEditingController();
+      widget.pedido.addressController = TextEditingController();
+      widget.pedido.numberController = TextEditingController();
+      widget.pedido.complementController = TextEditingController();
+      widget.pedido.neighborhoodController = TextEditingController();
+      widget.pedido.cityController = TextEditingController();
+      widget.pedido.shippingCost = 0.0;
+      widget.pedido.shippingCostController.text = '0.00';
+      widget.pedido.storeFinal = '';
+      widget.pedido.pickupStoreId = '';
+      widget.pedido.lastCep = '';
       widget.setStateCallback();
       widget.savePersistedData(widget.pedido);
-    } else {
-      debugPrint('Erro: Estado do AddressSection não encontrado.');
-    }
+    });
+    logToFile('Reset AddressSection: new controllers created, keyCounter=$_addressSectionKeyCounter');
   }
 
   @override
@@ -1385,10 +1435,10 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
   @override
 Widget build(BuildContext context) {
   super.build(context);
-  final totalOriginal = widget.pedido.calculateTotal(applyDiscount: false);
+  final totalOriginal = widget.pedido.products.fold<double>(
+      0.0, (sum, product) => sum + (product['price'] * (product['quantity'] ?? 1)));
   final totalWithDiscount = widget.pedido.calculateTotal(applyDiscount: true);
   final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-  final primaryColor = const Color(0xFFF28C38);
   return Container(
     color: isDarkMode ? Colors.grey[900] : Colors.grey[50],
     child: Padding(
@@ -1415,467 +1465,475 @@ Widget build(BuildContext context) {
                 key: _formKey,
                 child: Column(
                   children: [
-                    CustomerSection(
-                      phoneController: widget.pedido.phoneController,
-                      onPhoneChanged: (String value) {
-                        print('Telefone inserido: $value');
-                        widget.savePersistedData(widget.pedido);
-                      },
-                      onFetchCustomer: widget.fetchCustomer,
-                      nameController: widget.pedido.nameController,
-                      onNameChanged: (String value) {
-                        widget.savePersistedData(widget.pedido);
-                      },
-                      emailController: widget.pedido.emailController,
-                      onEmailChanged: (String value) {
-                        widget.savePersistedData(widget.pedido);
-                      },
-                      selectedVendedor: widget.pedido.selectedVendedor,
-                      onVendedorChanged: (value) {
-                        widget.setStateCallback();
-                        widget.pedido.selectedVendedor = value ?? 'Alline';
-                        widget.savePersistedData(widget.pedido);
-                      },
-                      validator: (value) => null,
-                      isLoading: widget.isLoading,
-                    ),
+                     CustomerSection(
+  phoneController: widget.pedido.phoneController,
+  onPhoneChanged: null,
+  onPhoneSubmitted: (String value) {
+    print('Telefone submetido: $value');
+    widget.savePersistedData(widget.pedido);
+  },
+  onFetchCustomer: widget.fetchCustomer,
+  nameController: widget.pedido.nameController,
+  onNameChanged: null,
+  onNameSubmitted: (String value) {
+    widget.savePersistedData(widget.pedido);
+  },
+  emailController: widget.pedido.emailController,
+  onEmailChanged: null,
+  onEmailSubmitted: (String value) {
+    widget.savePersistedData(widget.pedido);
+  },
+  selectedVendedor: widget.pedido.selectedVendedor,
+  onVendedorChanged: (value) {
+    widget.setStateCallback();
+    widget.pedido.selectedVendedor = value ?? 'Alline';
+    widget.savePersistedData(widget.pedido);
+  },
+  validator: (value) => null,
+  isLoading: widget.isLoading,
+),
+const SizedBox(height: 16),
+ExpansionPanelList(
+  elevation: 0,
+  expandedHeaderPadding: EdgeInsets.zero,
+  expansionCallback: (panelIndex, isExpanded) {
+    widget.setStateCallback();
+    widget.pedido.isAddressSectionExpanded = !widget.pedido.isAddressSectionExpanded;
+    widget.savePersistedData(widget.pedido);
+  },
+  children: [
+    ExpansionPanel(
+      headerBuilder: (context, isExpanded) => Container(
+        color: Colors.white, // Fundo branco para o header
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          title: Text(
+            'Endereço do Cliente',
+            style: GoogleFonts.poppins(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: isDarkMode ? Colors.white : Colors.black87,
+            ),
+          ),
+          trailing: AnimatedRotation(
+            turns: isExpanded ? 0.5 : 0,
+            duration: const Duration(milliseconds: 200),
+            child: Icon(
+              Icons.arrow_drop_down_rounded,
+              color: primaryColor,
+              size: 24,
+            ),
+          ),
+        ),
+      ),
+      body: AddressSection(
+        key: _addressSectionKey,
+        cepController: widget.pedido.cepController,
+        addressController: widget.pedido.addressController,
+        numberController: widget.pedido.numberController,
+        complementController: widget.pedido.complementController,
+        neighborhoodController: widget.pedido.neighborhoodController,
+        cityController: widget.pedido.cityController,
+        onChanged: (value) {
+          widget.setStateCallback();
+          widget.savePersistedData(widget.pedido);
+          final cleanCep = widget.pedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
+          if (cleanCep.length == 8) {
+            logToFile('Calling checkStoreByCep from AddressSection onChanged: cep=$cleanCep');
+            widget.checkStoreByCep();
+          }
+        },
+        onShippingCostUpdated: (cost) {
+          widget.setStateCallback();
+          widget.pedido.shippingCost = cost;
+          widget.pedido.shippingCostController.text = cost.toStringAsFixed(2);
+          widget.savePersistedData(widget.pedido);
+        },
+        onStoreUpdated: (storeFinal, pickupStoreId) {
+          widget.setStateCallback();
+          widget.pedido.storeFinal = storeFinal;
+          widget.pedido.pickupStoreId = pickupStoreId;
+          widget.savePersistedData(widget.pedido);
+          widget.checkStoreByCep();
+        },
+        externalShippingCost: widget.pedido.shippingCost,
+        shippingMethod: widget.pedido.shippingMethod,
+        setStateCallback: widget.setStateCallback,
+        savePersistedData: () => widget.savePersistedData(widget.pedido),
+        checkStoreByCep: widget.checkStoreByCep,
+        pedido: widget.pedido,
+        onReset: resetAddressSection,
+      ),
+      isExpanded: widget.pedido.isAddressSectionExpanded,
+    ),
+  ],
+),
+const SizedBox(height: 16),
+KeyedSubtree(
+  key: ValueKey(widget.pedido.products.length),
+  child: ProductSection(
+    products: widget.pedido.products,
+    onRemoveProduct: (index) {
+      if (index >= 0 && index < widget.pedido.products.length) {
+        widget.pedido.products.removeAt(index);
+        widget.setStateCallback();
+        widget.pedido.notifyListeners();
+        widget.savePersistedData(widget.pedido);
+      }
+    },
+    onAddProduct: () async {
+      final selectedProduct = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) => ProductSelectionDialog(),
+      );
+      if (selectedProduct != null && mounted) {
+        widget.setStateCallback();
+        widget.pedido.products.add({
+          'id': selectedProduct['id'],
+          'name': selectedProduct['name'],
+          'quantity': 1,
+          'price': double.tryParse(selectedProduct['price'].toString()) ?? 0.0,
+          'variation_id': selectedProduct['variation_id'],
+          'variation_attributes': selectedProduct['variation_attributes'],
+          'image': selectedProduct['image'],
+        });
+        widget.savePersistedData(widget.pedido);
+      }
+    },
+    onUpdateQuantity: (index, quantity) {
+      if (index >= 0 && index < widget.pedido.products.length) {
+        widget.pedido.updateProductQuantity(index, quantity);
+        widget.savePersistedData(widget.pedido);
+      }
+    },
+    onUpdatePrice: (index, price) {
+      if (index >= 0 && index < widget.pedido.products.length) {
+        widget.pedido.products[index]['price'] = price;
+        widget.pedido.notifyListeners();
+        widget.savePersistedData(widget.pedido);
+      }
+    },
+  ),
+),
+const SizedBox(height: 16),
+ShippingSection(
+  cep: widget.pedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim(),
+  onStoreUpdated: (storeFinal, pickupStoreId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.setStateCallback();
+        final normalizedId = StoreNormalize.getId(storeFinal);
+        widget.pedido.storeFinal = StoreNormalize.getName(normalizedId);
+        widget.pedido.pickupStoreId = normalizedId;
+        widget.savePersistedData(widget.pedido);
+        widget.checkStoreByCep();
+      }
+    });
+  },
+  onShippingMethodUpdated: (method) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.setStateCallback();
+        widget.pedido.shippingMethod = method;
+        if (method == 'pickup') {
+          widget.pedido.shippingCost = 0.0;
+          widget.pedido.shippingCostController.text = '0.00';
+          widget.pedido.storeFinal = 'Central Distribuição (Sagrada Família)';
+          widget.pedido.pickupStoreId = StoreNormalize.getId(widget.pedido.storeFinal);
+        }
+        widget.savePersistedData(widget.pedido);
+        widget.checkStoreByCep();
+      }
+    });
+  },
+  onShippingCostUpdated: (cost) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.setStateCallback();
+        widget.pedido.shippingCost = cost;
+        widget.pedido.shippingCostController.text = cost.toStringAsFixed(2);
+        widget.savePersistedData(widget.pedido);
+      }
+    });
+  },
+  pedido: widget.pedido,
+  onSchedulingChanged: widget.checkStoreByCep,
+),
+const SizedBox(height: 16),
+AnimatedContainer(
+  duration: const Duration(milliseconds: 300),
+  curve: Curves.easeOutCubic,
+  decoration: BoxDecoration(
+    color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
+    borderRadius: BorderRadius.circular(14),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withOpacity(0.05),
+        blurRadius: 12,
+        offset: const Offset(0, 4),
+      ),
+    ],
+  ),
+  child: Padding(
+    padding: const EdgeInsets.all(16.0),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(Icons.calendar_today, color: primaryColor),
+          title: Text(
+            'Data e Horário de Entrega/Retirada',
+            style: GoogleFonts.poppins(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: isDarkMode ? Colors.white : Colors.black87,
+            ),
+          ),
+        ),
+        SchedulingSection(
+          shippingMethod: widget.pedido.shippingMethod,
+          storeFinal: widget.pedido.storeFinal,
+          onDateTimeUpdated: (date, time) {
+            widget.setStateCallback();
+            widget.pedido.schedulingDate = date;
+            widget.pedido.schedulingTime = ensureTimeRange(time);
+            widget.savePersistedData(widget.pedido);
+            widget.checkStoreByCep();
+          },
+          onSchedulingChanged: widget.checkStoreByCep,
+          initialDate: _parseInitialDate(widget.pedido.schedulingDate, widget.pedido.shippingMethod),
+          initialTimeSlot: widget.pedido.schedulingTime.isNotEmpty ? widget.pedido.schedulingTime : null,
+        ),
+      ],
+    ),
+  ),
+),
+const SizedBox(height: 16),
+AnimatedContainer(
+  duration: const Duration(milliseconds: 300),
+  curve: Curves.easeOutCubic,
+  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+  decoration: BoxDecoration(
+    color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
+    borderRadius: BorderRadius.circular(14),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withOpacity(0.05),
+        blurRadius: 12,
+        offset: const Offset(0, 4),
+      ),
+    ],
+  ),
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(Icons.note, color: primaryColor),
+        title: Text(
+          'Observações do Cliente',
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : Colors.black87,
+          ),
+        ),
+        trailing: Checkbox(
+          value: widget.pedido.showNotesField,
+          onChanged: (value) {
+            widget.setStateCallback();
+            widget.pedido.showNotesField = value ?? false;
+            if (!widget.pedido.showNotesField) {
+              widget.pedido.notesController.text = '';
+            }
+            widget.savePersistedData(widget.pedido);
+          },
+          activeColor: primaryColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        ),
+      ),
+      AnimatedCrossFade(
+        duration: const Duration(milliseconds: 200),
+        crossFadeState: widget.pedido.showNotesField ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+        firstChild: const SizedBox.shrink(),
+        secondChild: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: TextFormField(
+            controller: widget.pedido.notesController,
+            maxLines: 3,
+            decoration: InputDecoration(
+              labelText: 'Observações',
+              labelStyle: GoogleFonts.poppins(
+                color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: primaryColor, width: 2),
+              ),
+              prefixIcon: Icon(Icons.note_alt, color: primaryColor),
+              filled: true,
+              fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: isDarkMode ? Colors.white : Colors.black87,
+            ),
+            onFieldSubmitted: (value) {
+              widget.savePersistedData(widget.pedido);
+            },
+          ),
+        ),
+      ),
+    ],
+  ),
+),
+const SizedBox(height: 16),
+AnimatedContainer(
+  duration: const Duration(milliseconds: 300),
+  curve: Curves.easeOutCubic,
+  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+  decoration: BoxDecoration(
+    color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
+    borderRadius: BorderRadius.circular(14),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withOpacity(0.05),
+        blurRadius: 12,
+        offset: const Offset(0, 4),
+      ),
+    ],
+  ),
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(Icons.discount, color: primaryColor),
+        title: Text(
+          'Cupom de Desconto',
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : Colors.black87,
+          ),
+        ),
+        trailing: Checkbox(
+          value: widget.pedido.showCouponField,
+          onChanged: (value) {
+            widget.setStateCallback();
+            widget.pedido.showCouponField = value ?? false;
+            if (!widget.pedido.showCouponField) {
+              widget.pedido.couponController.text = '';
+              widget.pedido.isCouponValid = false;
+              widget.pedido.discountAmount = 0.0;
+              widget.pedido.couponErrorMessage = null;
+            }
+            widget.savePersistedData(widget.pedido);
+          },
+          activeColor: primaryColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        ),
+      ),
+      AnimatedCrossFade(
+        duration: const Duration(milliseconds: 200),
+        crossFadeState: widget.pedido.showCouponField ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+        firstChild: const SizedBox.shrink(),
+        secondChild: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: TextFormField(
+            controller: widget.pedido.couponController,
+            decoration: InputDecoration(
+              labelText: 'Código do Cupom',
+              labelStyle: GoogleFonts.poppins(
+                color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: primaryColor, width: 2),
+              ),
+              prefixIcon: Icon(Icons.discount, color: primaryColor),
+              filled: true,
+              fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              suffixIcon: widget.pedido.isCouponValid
+                  ? Icon(Icons.check_circle, color: Colors.green.shade600)
+                  : widget.pedido.couponController.text.isNotEmpty
+                      ? Icon(Icons.error, color: Colors.red.shade600)
+                      : null,
+            ),
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: isDarkMode ? Colors.white : Colors.black87,
+            ),
+            onFieldSubmitted: (value) {
+              widget.savePersistedData(widget.pedido);
+            },
+            validator: (value) => null,
+          ),
+        ),
+      ),
+      if (widget.pedido.couponErrorMessage != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          widget.pedido.couponErrorMessage!,
+          style: GoogleFonts.poppins(
+            color: Colors.red.shade600,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    ],
+  ),
+),
                     const SizedBox(height: 16),
-                    ExpansionPanelList(
-                      elevation: 0,
-                      expandedHeaderPadding: EdgeInsets.zero,
-                      expansionCallback: (panelIndex, isExpanded) {
-                        widget.setStateCallback();
-                        widget.pedido.isAddressSectionExpanded = !widget.pedido.isAddressSectionExpanded;
-                        widget.savePersistedData(widget.pedido);
-                      },
-                      children: [
-                        ExpansionPanel(
-                          headerBuilder: (context, isExpanded) => ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            title: Text(
-                              'Endereço do Cliente',
-                              style: GoogleFonts.poppins(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: isDarkMode ? Colors.white : Colors.black87,
-                              ),
-                            ),
-                            trailing: AnimatedRotation(
-                              turns: isExpanded ? 0.5 : 0,
-                              duration: const Duration(milliseconds: 200),
-                              child: Icon(
-                                Icons.arrow_drop_down_rounded,
-                                color: primaryColor,
-                                size: 24,
-                              ),
-                            ),
-                          ),
-                          body: AddressSection(
-                            key: _addressSectionKey,
-                            cepController: widget.pedido.cepController,
-                            addressController: widget.pedido.addressController,
-                            numberController: widget.pedido.numberController,
-                            complementController: widget.pedido.complementController,
-                            neighborhoodController: widget.pedido.neighborhoodController,
-                            cityController: widget.pedido.cityController,
-                            onChanged: (value) {
-                              widget.setStateCallback();
-                              widget.savePersistedData(widget.pedido);
-                              if (widget.pedido.cepController.text.replaceAll(RegExp(r'\D'), '').length == 8) {
-                                widget.checkStoreByCep();
-                              }
-                            },
-                            onShippingCostUpdated: (cost) {
-                              widget.setStateCallback();
-                              widget.pedido.shippingCost = cost;
-                              widget.pedido.shippingCostController.text = cost.toStringAsFixed(2);
-                              widget.savePersistedData(widget.pedido);
-                            },
-                            onStoreUpdated: (storeFinal, pickupStoreId) {
-                              widget.setStateCallback();
-                              widget.pedido.storeFinal = storeFinal;
-                              widget.pedido.pickupStoreId = pickupStoreId;
-                              widget.savePersistedData(widget.pedido);
-                              widget.checkStoreByCep();
-                            },
-                            externalShippingCost: widget.pedido.shippingCost,
-                            shippingMethod: widget.pedido.shippingMethod,
-                            setStateCallback: widget.setStateCallback,
-                            savePersistedData: () => widget.savePersistedData(widget.pedido),
-                            checkStoreByCep: widget.checkStoreByCep,
-                            pedido: widget.pedido,
-                            onReset: resetAddressSection,
-                          ),
-                          isExpanded: widget.pedido.isAddressSectionExpanded,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    KeyedSubtree(
-                      key: ValueKey(widget.pedido.products.length),
-                      child: ProductSection(
-                        products: widget.pedido.products,
-                        onRemoveProduct: (index) {
-                          if (index >= 0 && index < widget.pedido.products.length) {
-                            widget.pedido.products.removeAt(index);
-                            widget.setStateCallback();
-                            widget.pedido.notifyListeners();
-                            widget.savePersistedData(widget.pedido);
-                          }
-                        },
-                        onAddProduct: () async {
-                          final selectedProduct = await showDialog<Map<String, dynamic>>(
-                            context: context,
-                            builder: (context) => ProductSelectionDialog(),
-                          );
-                          if (selectedProduct != null && mounted) {
-                            widget.setStateCallback();
-                            widget.pedido.products.add({
-                              'id': selectedProduct['id'],
-                              'name': selectedProduct['name'],
-                              'quantity': 1,
-                              'price': double.tryParse(selectedProduct['price'].toString()) ?? 0.0,
-                              'variation_id': selectedProduct['variation_id'],
-                              'variation_attributes': selectedProduct['variation_attributes'],
-                              'image': selectedProduct['image'],
-                            });
-                            widget.savePersistedData(widget.pedido);
-                          }
-                        },
-                        onUpdateQuantity: (index, quantity) {
-                          if (index >= 0 && index < widget.pedido.products.length) {
-                            widget.pedido.updateProductQuantity(index, quantity);
-                            widget.savePersistedData(widget.pedido);
-                          }
-                        },
-                        onUpdatePrice: (index, price) {
-                          if (index >= 0 && index < widget.pedido.products.length) {
-                            widget.pedido.products[index]['price'] = price;
-                            widget.pedido.notifyListeners();
-                            widget.savePersistedData(widget.pedido);
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    ShippingSection(
-                      cep: widget.pedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim(),
-                      onStoreUpdated: (storeFinal, pickupStoreId) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) {
-                            widget.setStateCallback();
-                            final normalizedId = StoreNormalize.getId(storeFinal);
-                            widget.pedido.storeFinal = StoreNormalize.getName(normalizedId);
-                            widget.pedido.pickupStoreId = normalizedId;
-                            widget.savePersistedData(widget.pedido);
-                            widget.checkStoreByCep();
-                          }
-                        });
-                      },
-                      onShippingMethodUpdated: (method) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) {
-                            widget.setStateCallback();
-                            widget.pedido.shippingMethod = method;
-                            if (method == 'pickup') {
-                              widget.pedido.shippingCost = 0.0;
-                              widget.pedido.shippingCostController.text = '0.00';
-                              widget.pedido.storeFinal = 'Central Distribuição (Sagrada Família)';
-                              widget.pedido.pickupStoreId = StoreNormalize.getId(widget.pedido.storeFinal);
-                            }
-                            widget.savePersistedData(widget.pedido);
-                            widget.checkStoreByCep();
-                          }
-                        });
-                      },
-                      onShippingCostUpdated: (cost) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) {
-                            widget.setStateCallback();
-                            widget.pedido.shippingCost = cost;
-                            widget.pedido.shippingCostController.text = cost.toStringAsFixed(2);
-                            widget.savePersistedData(widget.pedido);
-                          }
-                        });
-                      },
-                      pedido: widget.pedido,
-                      onSchedulingChanged: widget.checkStoreByCep,
-                    ),
-                    const SizedBox(height: 16),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutCubic,
-                      decoration: BoxDecoration(
-                        color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: Icon(Icons.calendar_today, color: primaryColor),
-                              title: Text(
-                                'Data e Horário de Entrega/Retirada',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: isDarkMode ? Colors.white : Colors.black87,
-                                ),
-                              ),
-                            ),
-                            SchedulingSection(
-                              shippingMethod: widget.pedido.shippingMethod,
-                              storeFinal: widget.pedido.storeFinal,
-                              onDateTimeUpdated: (date, time) {
-                                widget.setStateCallback();
-                                widget.pedido.schedulingDate = date;
-                                widget.pedido.schedulingTime = ensureTimeRange(time);
-                                widget.savePersistedData(widget.pedido);
-                                widget.checkStoreByCep();
-                              },
-                              onSchedulingChanged: widget.checkStoreByCep,
-                              initialDate: _parseInitialDate(widget.pedido.schedulingDate, widget.pedido.shippingMethod),
-                              initialTimeSlot: widget.pedido.schedulingTime.isNotEmpty ? widget.pedido.schedulingTime : null,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutCubic,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.note, color: primaryColor),
-                            title: Text(
-                              'Observações do Cliente',
-                              style: GoogleFonts.poppins(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: isDarkMode ? Colors.white : Colors.black87,
-                              ),
-                            ),
-                            trailing: Checkbox(
-                              value: widget.pedido.showNotesField,
-                              onChanged: (value) {
-                                widget.setStateCallback();
-                                widget.pedido.showNotesField = value ?? false;
-                                if (!widget.pedido.showNotesField) {
-                                  widget.pedido.notesController.text = '';
-                                }
-                                widget.savePersistedData(widget.pedido);
-                              },
-                              activeColor: primaryColor,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                            ),
-                          ),
-                          AnimatedCrossFade(
-                            duration: const Duration(milliseconds: 200),
-                            crossFadeState: widget.pedido.showNotesField ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                            firstChild: const SizedBox.shrink(),
-                            secondChild: Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: TextFormField(
-                                controller: widget.pedido.notesController,
-                                maxLines: 3,
-                                decoration: InputDecoration(
-                                  labelText: 'Observações',
-                                  labelStyle: GoogleFonts.poppins(
-                                    color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: primaryColor, width: 2),
-                                  ),
-                                  prefixIcon: Icon(Icons.note_alt, color: primaryColor),
-                                  filled: true,
-                                  fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                ),
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  color: isDarkMode ? Colors.white : Colors.black87,
-                                ),
-                                onChanged: (value) {
-                                  widget.savePersistedData(widget.pedido);
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutCubic,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.discount, color: primaryColor),
-                            title: Text(
-                              'Cupom de Desconto',
-                              style: GoogleFonts.poppins(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: isDarkMode ? Colors.white : Colors.black87,
-                              ),
-                            ),
-                            trailing: Checkbox(
-                              value: widget.pedido.showCouponField,
-                              onChanged: (value) {
-                                widget.setStateCallback();
-                                widget.pedido.showCouponField = value ?? false;
-                                if (!widget.pedido.showCouponField) {
-                                  widget.pedido.couponController.text = '';
-                                  widget.pedido.isCouponValid = false;
-                                  widget.pedido.discountAmount = 0.0;
-                                  widget.pedido.couponErrorMessage = null;
-                                }
-                                widget.savePersistedData(widget.pedido);
-                              },
-                              activeColor: primaryColor,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                            ),
-                          ),
-                          AnimatedCrossFade(
-                            duration: const Duration(milliseconds: 200),
-                            crossFadeState: widget.pedido.showCouponField ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                            firstChild: const SizedBox.shrink(),
-                            secondChild: Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: TextFormField(
-                                controller: widget.pedido.couponController,
-                                decoration: InputDecoration(
-                                  labelText: 'Código do Cupom',
-                                  labelStyle: GoogleFonts.poppins(
-                                    color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: primaryColor, width: 2),
-                                  ),
-                                  prefixIcon: Icon(Icons.discount, color: primaryColor),
-                                  filled: true,
-                                  fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                  suffixIcon: widget.pedido.isCouponValid
-                                      ? Icon(Icons.check_circle, color: Colors.green.shade600)
-                                      : widget.pedido.couponController.text.isNotEmpty
-                                          ? Icon(Icons.error, color: Colors.red.shade600)
-                                          : null,
-                                ),
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  color: isDarkMode ? Colors.white : Colors.black87,
-                                ),
-                                onChanged: (value) {
-                                  widget.savePersistedData(widget.pedido);
-                                },
-                                validator: (value) => null,
-                              ),
-                            ),
-                          ),
-                          if (widget.pedido.couponErrorMessage != null) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              widget.pedido.couponErrorMessage!,
-                              style: GoogleFonts.poppins(
-                                color: Colors.red.shade600,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    SummarySection(
-                      totalOriginal: totalOriginal,
-                      isCouponValid: widget.pedido.isCouponValid,
-                      couponCode: widget.pedido.couponController.text,
-                      discountAmount: widget.pedido.discountAmount,
-                      totalWithDiscount: totalWithDiscount,
-                      isLoading: widget.isLoading,
-                      onCreateOrder: widget.createOrder,
-                      pedido: widget.pedido,
-                      paymentInstructions: widget.pedido.paymentInstructions,
-                      resultMessage: widget.resultMessage,
-                    ),
-                    const SizedBox(height: 16),
-                    TextButton.icon(
-                      onPressed: widget.clearLocalData,
-                      icon: Icon(Icons.refresh, size: 16, color: primaryColor),
-                      label: Text(
-                        'Limpar Dados',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: primaryColor,
-                        ),
-                      ),
-                      style: TextButton.styleFrom(
-                        foregroundColor: primaryColor,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                    ),
+SummarySection(
+  totalOriginal: totalOriginal,
+  isCouponValid: widget.pedido.isCouponValid,
+  couponCode: widget.pedido.couponController.text,
+  discountAmount: widget.pedido.discountAmount,
+  totalWithDiscount: totalWithDiscount,
+  isLoading: widget.isLoading,
+  onCreateOrder: widget.createOrder,
+  pedido: widget.pedido,
+  paymentInstructions: widget.pedido.paymentInstructions,
+  resultMessage: widget.resultMessage,
+),
+const SizedBox(height: 16),
+TextButton.icon(
+  onPressed: widget.clearLocalData,
+  icon: Icon(Icons.refresh, size: 16, color: primaryColor),
+  label: Text(
+    'Limpar Dados',
+    style: GoogleFonts.poppins(
+      fontSize: 14,
+      fontWeight: FontWeight.w500,
+      color: primaryColor,
+    ),
+  ),
+  style: TextButton.styleFrom(
+    foregroundColor: primaryColor,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  ),
+),
                   ],
                 ),
               ),
@@ -1886,4 +1944,4 @@ Widget build(BuildContext context) {
     ),
   );
 }
-}
+} 
