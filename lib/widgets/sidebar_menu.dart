@@ -1,6 +1,11 @@
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../enums.dart'; // Importando as definições compartilhadas
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../enums.dart';
+import '../pages/auth_page.dart';
+import '../provider.dart';
 
 class SidebarMenu extends StatefulWidget {
   final MenuItem selectedMenu;
@@ -119,6 +124,14 @@ class _SidebarMenuState extends State<SidebarMenu> with SingleTickerProviderStat
           ),
           const SizedBox(height: 8),
           _buildMenuItem(
+            icon: Icons.feedback,
+            label: 'Feedback',
+            menuItem: MenuItem.feedback,
+            hasSubmenu: false,
+            primaryColor: primaryColor,
+          ),
+          const SizedBox(height: 8),
+          _buildMenuItem(
             icon: Icons.support_agent,
             label: 'Suporte',
             menuItem: MenuItem.suporte,
@@ -127,7 +140,18 @@ class _SidebarMenuState extends State<SidebarMenu> with SingleTickerProviderStat
           ),
           const Spacer(),
           const SizedBox(height: 16),
-          _buildCollapseButton(primaryColor),
+          // Botões logout e collapse lado a lado
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _buildLogoutButton(primaryColor),
+                const SizedBox(width: 12),
+                _buildCollapseButton(primaryColor),
+              ],
+            ),
+          ),
           const SizedBox(height: 16),
         ],
       ),
@@ -165,7 +189,6 @@ class _SidebarMenuState extends State<SidebarMenu> with SingleTickerProviderStat
                         _expandedMenu = menuItem;
                         _controller.forward();
                       }
-                      // Chama o callback para selecionar o item principal
                       widget.onMenuItemSelected(menuItem);
                     } else {
                       _expandedMenu = null;
@@ -182,15 +205,12 @@ class _SidebarMenuState extends State<SidebarMenu> with SingleTickerProviderStat
                     padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                     margin: const EdgeInsets.symmetric(horizontal: 8),
                     decoration: BoxDecoration(
-  color: isSelected ? primaryColor.withOpacity(0.15) : Colors.transparent,
-  borderRadius: BorderRadius.circular(14),
-  border: Border.all(
-    color: isSelected
-        ? primaryColor.withOpacity(0.5)
-        : Colors.grey.withOpacity(0.2),
-  ),
-),
-
+                      color: isSelected ? primaryColor.withOpacity(0.15) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isSelected ? primaryColor.withOpacity(0.5) : Colors.grey.withOpacity(0.2),
+                      ),
+                    ),
                     child: Row(
                       children: [
                         Container(
@@ -330,48 +350,85 @@ class _SidebarMenuState extends State<SidebarMenu> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildCollapseButton(Color primaryColor) {
-    return Align(
-      alignment: Alignment.bottomRight,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 12),
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: primaryColor.withOpacity(0.1),
-            border: Border.all(color: primaryColor.withOpacity(0.3)),
-            boxShadow: [
-              BoxShadow(
-                color: primaryColor.withOpacity(0.2),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
+  Widget _buildLogoutButton(Color primaryColor) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: primaryColor.withOpacity(0.1),
+        border: Border.all(color: primaryColor.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: primaryColor.withOpacity(0.2),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
-          child: IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: Center(
-              child: Icon(
-                _isCollapsed ? Icons.arrow_forward_ios : Icons.arrow_back_ios,
-                size: 18,
-                color: primaryColor,
-              ),
-            ),
-            onPressed: () {
-              setState(() {
-                _isCollapsed = !_isCollapsed;
-                if (_isCollapsed) {
-                  _expandedMenu = null;
-                  _controller.reverse();
-                }
-              });
-            },
-            tooltip: _isCollapsed ? 'Expandir Menu' : 'Recolher Menu',
+        ],
+      ),
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        icon: Center(
+          child: Icon(
+            Icons.logout,
+            size: 16,
+            color: primaryColor,
           ),
         ),
+        onPressed: () async {
+          final provider = Provider.of<AuthProvider>(context, listen: false);
+          provider.logout();
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove('userId');
+          if (context.mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const AuthPage()),
+            );
+          }
+        },
+        tooltip: 'Logout',
+      ),
+    );
+  }
+
+  Widget _buildCollapseButton(Color primaryColor) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: primaryColor.withOpacity(0.1),
+        border: Border.all(color: primaryColor.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: primaryColor.withOpacity(0.2),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        icon: Center(
+          child: Icon(
+            _isCollapsed ? Icons.arrow_forward_ios : Icons.arrow_back_ios,
+            size: 16,
+            color: primaryColor,
+          ),
+        ),
+        onPressed: () {
+          setState(() {
+            _isCollapsed = !_isCollapsed;
+            if (_isCollapsed) {
+              _expandedMenu = null;
+              _controller.reverse();
+            }
+          });
+        },
+        tooltip: _isCollapsed ? 'Expandir Menu' : 'Recolher Menu',
       ),
     );
   }

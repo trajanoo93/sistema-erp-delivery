@@ -15,12 +15,12 @@ enum PagamentosSubItem implements SubItem {
   conferirPagamentos,
 }
 
-// Enum para itens principais do menu
+
 enum MenuItem {
   dashboard,
   pedidos,
   pagamentos,
   suporte,
   unidades,
-  
+  feedback,
 }
