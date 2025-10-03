@@ -159,196 +159,196 @@ class _SidebarMenuState extends State<SidebarMenu> with SingleTickerProviderStat
   }
 
   Widget _buildMenuItem({
-    required IconData icon,
-    required String label,
-    required MenuItem menuItem,
-    required bool hasSubmenu,
-    List<Map<String, dynamic>>? subItems,
-    required Color primaryColor,
-  }) {
-    final bool isSelected = widget.selectedMenu == menuItem;
-    final bool isExpanded = _expandedMenu == menuItem;
-    double scale = 1.0;
+  required IconData icon,
+  required String label,
+  required MenuItem menuItem,
+  required bool hasSubmenu,
+  List<Map<String, dynamic>>? subItems,
+  required Color primaryColor,
+}) {
+  final bool isSelected = widget.selectedMenu == menuItem;
+  final bool isExpanded = _expandedMenu == menuItem;
+  double scale = 1.0;
 
-    return Column(
-      children: [
-        MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: StatefulBuilder(
-            builder: (context, setState) {
-              return GestureDetector(
-                onTapDown: (_) => setState(() => scale = 0.95),
-                onTapUp: (_) => setState(() => scale = 1.0),
-                onTap: () {
-                  setState(() {
-                    if (hasSubmenu) {
-                      if (isExpanded) {
-                        _expandedMenu = null;
-                        _controller.reverse();
-                      } else {
-                        _expandedMenu = menuItem;
-                        _controller.forward();
-                      }
-                      widget.onMenuItemSelected(menuItem);
-                    } else {
+  return Column(
+    children: [
+      MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: StatefulBuilder(
+          builder: (context, setState) {
+            return GestureDetector(
+              onTapDown: (_) => setState(() => scale = 0.95),
+              onTapUp: (_) => setState(() => scale = 1.0),
+              onTap: () {
+                setState(() {
+                  if (hasSubmenu) {
+                    if (isExpanded) {
                       _expandedMenu = null;
-                      widget.onMenuItemSelected(menuItem);
+                      _controller.reverse();
+                    } else {
+                      _expandedMenu = menuItem;
+                      _controller.forward();
                     }
-                  });
-                },
-                child: AnimatedScale(
-                  scale: scale,
+                    widget.onMenuItemSelected(menuItem);
+                  } else {
+                    _expandedMenu = null;
+                    widget.onMenuItemSelected(menuItem);
+                  }
+                });
+              },
+              child: AnimatedScale(
+                scale: scale,
+                duration: const Duration(milliseconds: 200),
+                child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOut,
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                    margin: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: isSelected ? primaryColor.withOpacity(0.15) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: isSelected ? primaryColor.withOpacity(0.5) : Colors.grey.withOpacity(0.2),
-                      ),
+                  curve: Curves.easeOut,
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected ? primaryColor.withOpacity(0.15) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isSelected ? primaryColor.withOpacity(0.5) : Colors.grey.withOpacity(0.2),
                     ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: primaryColor,
-                            boxShadow: [
-                              BoxShadow(
-                                color: primaryColor.withOpacity(0.3),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            icon,
-                            color: Colors.white,
-                            size: 18,
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: primaryColor.withOpacity(0.2),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : [],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: primaryColor,
+                          boxShadow: [
+                            BoxShadow(
+                              color: primaryColor.withOpacity(0.3),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          icon,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                      if (!_isCollapsed) ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            label,
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).brightness == Brightness.dark
+                                  ? Colors.white
+                                  : Colors.black87,
+                              fontSize: 15,
+                            ),
                           ),
                         ),
-                        if (!_isCollapsed) ...[
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              label,
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(context).brightness == Brightness.dark
-                                    ? Colors.white
-                                    : Colors.black87,
-                                fontSize: 15,
-                              ),
+                        if (hasSubmenu)
+                          AnimatedRotation(
+                            turns: isExpanded ? 0.5 : 0,
+                            duration: const Duration(milliseconds: 200),
+                            child: Icon(
+                              Icons.arrow_drop_down_rounded,
+                              color: primaryColor,
+                              size: 20,
                             ),
                           ),
-                          if (hasSubmenu)
-                            AnimatedRotation(
-                              turns: isExpanded ? 0.5 : 0,
-                              duration: const Duration(milliseconds: 200),
-                              child: Icon(
-                                Icons.arrow_drop_down_rounded,
-                                color: primaryColor,
-                                size: 20,
-                              ),
-                            ),
-                        ],
                       ],
-                    ),
+                    ],
                   ),
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
-        if (hasSubmenu && isExpanded && !_isCollapsed)
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutCubic,
-            margin: const EdgeInsets.only(left: 16, right: 8, top: 4),
-            child: Column(
-              children: subItems!.asMap().entries.map((entry) {
-                int index = entry.key;
-                var subItem = entry.value;
-                final bool isSubSelected = widget.selectedSubItem == subItem['subItem'];
-                return AnimatedBuilder(
-                  animation: _fadeAnimation,
-                  builder: (context, child) {
-                    return Transform.translate(
-                      offset: Offset(0, (1 - _fadeAnimation.value) * 20 * (index + 1)),
-                      child: Opacity(
-                        opacity: _fadeAnimation.value,
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: InkWell(
+      ),
+      if (hasSubmenu && isExpanded && !_isCollapsed)
+        Container(
+          margin: const EdgeInsets.only(left: 24, right: 8, top: 8),
+          child: Column(
+            children: subItems!.asMap().entries.map((entry) {
+              int index = entry.key;
+              var subItem = entry.value;
+              final bool isSubSelected = widget.selectedSubItem == subItem['subItem'];
+              return AnimatedBuilder(
+                animation: _fadeAnimation,
+                builder: (context, child) {
+                  return Transform.scale(
+                    scale: isSubSelected ? 1.0 : 0.95 + (0.05 * _fadeAnimation.value),
+                    child: Opacity(
+                      opacity: _fadeAnimation.value,
+                      child: child,
+                    ),
+                  );
+                },
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
                     onTap: () {
                       widget.onMenuItemSelected(menuItem, subItem: subItem['subItem']);
                     },
-                    borderRadius: BorderRadius.circular(12),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                      margin: const EdgeInsets.only(bottom: 4),
                       decoration: BoxDecoration(
-                        color: isSubSelected ? primaryColor.withOpacity(0.08) : Colors.transparent,
+                        color: isSubSelected ? primaryColor.withOpacity(0.15) : Colors.white,
                         borderRadius: BorderRadius.circular(12),
                         border: Border(
                           left: BorderSide(
-                            color: isSubSelected ? primaryColor.withOpacity(0.4) : Colors.grey.withOpacity(0.2),
-                            width: 2,
+                            color: isSubSelected ? primaryColor : Colors.transparent,
+                            width: 3,
                           ),
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: Row(
                         children: [
                           Icon(
                             subItem['icon'] as IconData?,
-                            size: 18,
-                            color: isSubSelected
-                                ? primaryColor
-                                : Theme.of(context).brightness == Brightness.dark
-                                    ? Colors.white
-                                    : Colors.grey,
+                            size: 16,
+                            color: isSubSelected ? primaryColor : Colors.grey[600],
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               subItem['label'],
                               style: GoogleFonts.poppins(
                                 fontWeight: FontWeight.w500,
-                                color: isSubSelected
-                                    ? primaryColor
-                                    : Theme.of(context).brightness == Brightness.dark
-                                        ? Colors.white
-                                        : Colors.black87,
-                                fontSize: 14,
+                                color: isSubSelected ? primaryColor : Colors.black87,
+                                fontSize: 13,
                               ),
                             ),
                           ),
-                          if (isSubSelected)
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: primaryColor,
-                              ),
-                            ),
                         ],
                       ),
                     ),
                   ),
-                );
-              }).toList(),
-            ),
+                ),
+              );
+            }).toList(),
           ),
-      ],
-    );
-  }
+        ),
+    ],
+  );
+}
 
   Widget _buildLogoutButton(Color primaryColor) {
     return Container(
