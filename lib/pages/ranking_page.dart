@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 class RankingPage extends StatefulWidget {
-  const RankingPage({Key? key}) : super(key: key);
+  const RankingPage({super.key});
 
   @override
   State<RankingPage> createState() => _RankingPageState();
@@ -150,9 +150,9 @@ class _RankingPageState extends State<RankingPage> {
                           ),
                         ),
                       ],
-                      color: MaterialStateProperty.resolveWith<Color?>(
-                        (Set<MaterialState> states) {
-                          return states.contains(MaterialState.hovered)
+                      color: WidgetStateProperty.resolveWith<Color?>(
+                        (Set<WidgetState> states) {
+                          return states.contains(WidgetState.hovered)
                               ? Colors.orange.shade50.withOpacity(0.5)
                               : null;
                         },

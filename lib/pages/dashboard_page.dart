@@ -10,7 +10,7 @@ import '../provider.dart';
 import '../globals.dart' as globals;
 
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({Key? key}) : super(key: key);
+  const DashboardPage({super.key});
 
   @override
   _DashboardPageState createState() => _DashboardPageState();

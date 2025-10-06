@@ -13,11 +13,11 @@ class SidebarMenu extends StatefulWidget {
   final Function(MenuItem, {SubItem? subItem}) onMenuItemSelected;
 
   const SidebarMenu({
-    Key? key,
+    super.key,
     required this.selectedMenu,
     required this.selectedSubItem,
     required this.onMenuItemSelected,
-  }) : super(key: key);
+  });
 
   @override
   State<SidebarMenu> createState() => _SidebarMenuState();

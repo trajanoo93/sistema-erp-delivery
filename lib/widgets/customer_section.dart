@@ -1,26 +1,24 @@
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
-import '../utils/log_utils.dart'; // Importar log_utils para usar logToFile
+import '../utils/log_utils.dart';
+import 'package:provider/provider.dart';
+import '../provider.dart';
+import '../globals.dart';
 
 class CustomerSection extends StatefulWidget {
   final TextEditingController phoneController;
-  final Function(String)? onPhoneChanged; // Mantido para compatibilidade, mas opcional
-  final Function(String)? onPhoneSubmitted; // Novo callback
+  final Function(String)? onPhoneChanged;
+  final Function(String)? onPhoneSubmitted;
   final VoidCallback onFetchCustomer;
   final TextEditingController nameController;
-  final Function(String)? onNameChanged; // Mantido para compatibilidade, mas opcional
-  final Function(String)? onNameSubmitted; // Novo callback
-  final TextEditingController emailController;
-  final Function(String)? onEmailChanged; // Mantido para compatibilidade, mas opcional
-  final Function(String)? onEmailSubmitted; // Novo callback
-  final String selectedVendedor;
-  final Function(String?) onVendedorChanged;
-  final String? Function(String?)? validator;
+  final Function(String)? onNameChanged;
+  final Function(String)? onNameSubmitted;
   final bool isLoading;
 
   const CustomerSection({
-    Key? key,
+    super.key,
     required this.phoneController,
     required this.onPhoneChanged,
     this.onPhoneSubmitted,
@@ -28,14 +26,8 @@ class CustomerSection extends StatefulWidget {
     required this.nameController,
     required this.onNameChanged,
     this.onNameSubmitted,
-    required this.emailController,
-    required this.onEmailChanged,
-    this.onEmailSubmitted,
-    required this.selectedVendedor,
-    required this.onVendedorChanged,
-    this.validator,
     required this.isLoading,
-  }) : super(key: key);
+  });
 
   @override
   _CustomerSectionState createState() => _CustomerSectionState();
@@ -68,13 +60,10 @@ class _CustomerSectionState extends State<CustomerSection> {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final cleanedPhone = widget.phoneController.text.replaceAll(RegExp(r'\D'), '').trim();
     final isPhoneValid = cleanedPhone.length == 11;
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final vendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
 
-    logToFile('Phone: ${widget.phoneController.text}, Cleaned: $cleanedPhone, isPhoneValid: $isPhoneValid');
-
-    final List<String> vendedores = ['Alline', 'Cássio Vinicius', 'Maria Eduarda'];
-    final String dropdownValue = vendedores.contains(widget.selectedVendedor)
-        ? widget.selectedVendedor
-        : vendedores.first;
+    logToFile('Phone: ${widget.phoneController.text}, Cleaned: $cleanedPhone, isPhoneValid: $isPhoneValid, Vendedor: $vendedor');
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -94,6 +83,26 @@ class _CustomerSectionState extends State<CustomerSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: primaryColor.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: primaryColor.withOpacity(0.2),
+                width: 0.5,
+              ),
+            ),
+            child: Text(
+              'Vendedor: $vendedor',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                color: primaryColor,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           Text(
             'Dados do Cliente',
             style: GoogleFonts.poppins(
@@ -140,7 +149,7 @@ class _CustomerSectionState extends State<CustomerSection> {
                   keyboardType: TextInputType.phone,
                   inputFormatters: [phoneMaskFormatter],
                   onFieldSubmitted: widget.onPhoneSubmitted,
-                  validator: widget.validator,
+                  validator: null,
                 ),
               ),
               const SizedBox(width: 12),
@@ -184,51 +193,6 @@ class _CustomerSectionState extends State<CustomerSection> {
             ],
           ),
           const SizedBox(height: 20),
-          DropdownButtonFormField<String>(
-            value: dropdownValue,
-            decoration: InputDecoration(
-              labelText: 'Vendedor',
-              labelStyle: GoogleFonts.poppins(
-                color: isDarkMode ? Colors.white70 : Colors.black54,
-                fontWeight: FontWeight.w500,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: primaryColor,
-                  width: 2,
-                ),
-              ),
-              prefixIcon: Icon(
-                Icons.person_pin,
-                color: primaryColor,
-              ),
-              filled: true,
-              fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: isDarkMode ? Colors.white : Colors.black87,
-            ),
-            items: vendedores.map((vendedor) {
-              return DropdownMenuItem<String>(
-                value: vendedor,
-                child: Text(vendedor),
-              );
-            }).toList(),
-            onChanged: widget.onVendedorChanged,
-            validator: null,
-          ),
-          const SizedBox(height: 20),
           TextFormField(
             controller: widget.nameController,
             decoration: InputDecoration(
@@ -265,46 +229,6 @@ class _CustomerSectionState extends State<CustomerSection> {
               color: isDarkMode ? Colors.white : Colors.black87,
             ),
             onFieldSubmitted: widget.onNameSubmitted,
-            validator: null,
-          ),
-          const SizedBox(height: 20),
-          TextFormField(
-            controller: widget.emailController,
-            decoration: InputDecoration(
-              labelText: 'E-mail do Cliente (opcional)',
-              labelStyle: GoogleFonts.poppins(
-                color: isDarkMode ? Colors.white70 : Colors.black54,
-                fontWeight: FontWeight.w500,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: primaryColor,
-                  width: 2,
-                ),
-              ),
-              prefixIcon: Icon(
-                Icons.email,
-                color: primaryColor,
-              ),
-              filled: true,
-              fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: isDarkMode ? Colors.white : Colors.black87,
-            ),
-            keyboardType: TextInputType.emailAddress,
-            onFieldSubmitted: widget.onEmailSubmitted,
             validator: null,
           ),
         ],

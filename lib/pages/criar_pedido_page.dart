@@ -14,13 +14,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/log_utils.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter/services.dart';
 import 'package:erp_painel_delivery/criar_pedido_service.dart';
 import 'package:erp_painel_delivery/product_selection_dialog.dart';
-import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
+import '../provider.dart';
+import '../globals.dart';
 
 // Garante sempre um intervalo "HH:mm - HH:mm" a partir de "HH:mm"
 String ensureTimeRange(String time) {
@@ -100,7 +100,7 @@ class StoreNormalize {
 }
 
 class CriarPedidoPage extends StatefulWidget {
-  const CriarPedidoPage({Key? key}) : super(key: key);
+  const CriarPedidoPage({super.key});
 
   @override
   State<CriarPedidoPage> createState() => _CriarPedidoPageState();
@@ -185,7 +185,7 @@ String _paymentSlugFromLabel(String uiLabel) {
 
 Future<void> _savePersistedData(PedidoState pedido) async {
   _saveDebounce?.cancel();
-  _saveDebounce = Timer(const Duration(seconds: 1), () async {
+  _saveDebounce = Timer(const Duration(milliseconds: 2000), () async {
     final prefs = await SharedPreferences.getInstance();
     final index = _pedidos.indexOf(pedido);
     if (index >= 0) {
@@ -199,7 +199,6 @@ Future<void> _savePersistedData(PedidoState pedido) async {
       }
       await prefs.setString('phone_$index', pedido.phoneController.text);
       await prefs.setString('name_$index', pedido.nameController.text);
-      await prefs.setString('email_$index', pedido.emailController.text);
       await prefs.setString('cep_$index', pedido.cepController.text);
       await prefs.setString('address_$index', pedido.addressController.text);
       await prefs.setString('number_$index', pedido.numberController.text);
@@ -293,54 +292,53 @@ Future<void> _savePersistedData(PedidoState pedido) async {
     for (var json in pedidosJson) {
       final pedidoData = jsonDecode(json) as Map<String, dynamic>;
       final pedido = PedidoState.fromJson(pedidoData);
-      final pedidoWithCallback = PedidoState(onCouponValidated: _onCouponValidated);
-      pedidoWithCallback.phoneController.text = pedido.phoneController.text;
-      pedidoWithCallback.nameController.text = pedido.nameController.text;
-      pedidoWithCallback.emailController.text = pedido.emailController.text;
-      pedidoWithCallback.cepController.text = pedido.cepController.text;
-      pedidoWithCallback.addressController.text = pedido.addressController.text;
-      pedidoWithCallback.numberController.text = pedido.numberController.text;
-      pedidoWithCallback.complementController.text = pedido.complementController.text;
-      pedidoWithCallback.neighborhoodController.text = pedido.neighborhoodController.text;
-      pedidoWithCallback.cityController.text = pedido.cityController.text;
-      pedidoWithCallback.notesController.text = pedido.notesController.text;
-      pedidoWithCallback.couponController.text = pedido.couponController.text;
-      pedidoWithCallback.shippingCostController.text = pedido.shippingCostController.text;
-      pedidoWithCallback.products = List<Map<String, dynamic>>.from(pedido.products);
-      pedidoWithCallback.shippingMethod = pedido.shippingMethod;
-      pedidoWithCallback.selectedVendedor = pedido.selectedVendedor;
-      pedidoWithCallback.shippingCost = pedido.shippingCost;
-      pedidoWithCallback.storeFinal = pedido.storeFinal;
-      pedidoWithCallback.pickupStoreId = pedido.pickupStoreId;
-      pedidoWithCallback.selectedPaymentMethod = _validPaymentMethods.contains(pedido.selectedPaymentMethod)
-          ? pedido.selectedPaymentMethod
-          : '';
-      pedidoWithCallback.availablePaymentMethods = List<Map<String, String>>.from(pedido.availablePaymentMethods);
-      pedidoWithCallback.paymentAccounts = Map<String, String>.from(pedido.paymentAccounts);
-      pedidoWithCallback.showNotesField = pedido.showNotesField;
-      pedidoWithCallback.showCouponField = pedido.showCouponField;
-      pedidoWithCallback.schedulingDate = normalizeYmd(pedido.schedulingDate.isEmpty
-          ? DateFormat('yyyy-MM-dd').format(DateTime.now())
-          : pedido.schedulingDate);
-      final isSunday = DateTime.now().weekday == DateTime.sunday;
-      final defaultTimeSlot = pedido.shippingMethod == 'pickup' && isSunday
-          ? '09:00 - 12:00'
-          : '14:00 - 17:00';
-      pedidoWithCallback.schedulingTime = ensureTimeRange(
-          pedido.schedulingTime.isEmpty ? defaultTimeSlot : pedido.schedulingTime);
-      pedidoWithCallback.isCustomerSectionExpanded = pedido.isCustomerSectionExpanded;
-      pedidoWithCallback.isAddressSectionExpanded = pedido.isAddressSectionExpanded;
-      pedidoWithCallback.isProductsSectionExpanded = pedido.isProductsSectionExpanded;
-      pedidoWithCallback.isShippingSectionExpanded = pedido.isShippingSectionExpanded;
-      pedidoWithCallback.paymentInstructions = pedido.paymentInstructions;
-      pedidoWithCallback.couponErrorMessage = pedido.couponErrorMessage;
-      pedidoWithCallback.discountAmount = pedido.discountAmount;
-      pedidoWithCallback.isCouponValid = pedido.isCouponValid;
-      pedidoWithCallback.storeIndication = pedido.storeIndication;
-      pedidoWithCallback.isFetchingStore = pedido.isFetchingStore;
-      pedidoWithCallback.lastPhoneNumber = pedido.lastPhoneNumber;
-      pedidoWithCallback.nameController.addListener(_updateTabs);
-      _pedidos.add(pedidoWithCallback);
+     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+final pedidoWithCallback = PedidoState(onCouponValidated: _onCouponValidated);
+pedidoWithCallback.phoneController.text = pedido.phoneController.text;
+pedidoWithCallback.nameController.text = pedido.nameController.text;
+pedidoWithCallback.emailController.text = pedido.emailController.text;
+pedidoWithCallback.cepController.text = pedido.cepController.text;
+pedidoWithCallback.addressController.text = pedido.addressController.text;
+pedidoWithCallback.numberController.text = pedido.numberController.text;
+pedidoWithCallback.complementController.text = pedido.complementController.text;
+pedidoWithCallback.neighborhoodController.text = pedido.neighborhoodController.text;
+pedidoWithCallback.cityController.text = pedido.cityController.text;
+pedidoWithCallback.notesController.text = pedido.notesController.text;
+pedidoWithCallback.couponController.text = pedido.couponController.text;
+pedidoWithCallback.products = List<Map<String, dynamic>>.from(pedido.products);
+pedidoWithCallback.shippingMethod = pedido.shippingMethod;
+pedidoWithCallback.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
+pedidoWithCallback.shippingCost = pedido.shippingCost;
+pedidoWithCallback.storeFinal = pedido.storeFinal;
+pedidoWithCallback.pickupStoreId = pedido.pickupStoreId;
+pedidoWithCallback.selectedPaymentMethod = _validPaymentMethods.contains(pedido.selectedPaymentMethod)
+    ? pedido.selectedPaymentMethod
+    : '';
+pedidoWithCallback.availablePaymentMethods = List<Map<String, String>>.from(pedido.availablePaymentMethods);
+pedidoWithCallback.paymentAccounts = Map<String, String>.from(pedido.paymentAccounts);
+pedidoWithCallback.showNotesField = pedido.showNotesField;
+pedidoWithCallback.showCouponField = pedido.showCouponField;
+pedidoWithCallback.schedulingDate = normalizeYmd(pedido.schedulingDate.isEmpty
+    ? DateFormat('yyyy-MM-dd').format(DateTime.now())
+    : pedido.schedulingDate);
+final isSunday = DateTime.now().weekday == DateTime.sunday;
+final defaultTimeSlot = pedido.shippingMethod == 'pickup' && isSunday
+    ? '09:00 - 12:00'
+    : '14:00 - 17:00';
+pedidoWithCallback.schedulingTime = ensureTimeRange(pedido.schedulingTime.isEmpty ? defaultTimeSlot : pedido.schedulingTime);
+pedidoWithCallback.isCustomerSectionExpanded = pedido.isCustomerSectionExpanded;
+pedidoWithCallback.isAddressSectionExpanded = pedido.isAddressSectionExpanded;
+pedidoWithCallback.isProductsSectionExpanded = pedido.isProductsSectionExpanded;
+pedidoWithCallback.isShippingSectionExpanded = pedido.isShippingSectionExpanded;
+pedidoWithCallback.paymentInstructions = pedido.paymentInstructions;
+pedidoWithCallback.couponErrorMessage = pedido.couponErrorMessage;
+pedidoWithCallback.discountAmount = pedido.discountAmount;
+pedidoWithCallback.isCouponValid = pedido.isCouponValid;
+pedidoWithCallback.storeIndication = pedido.storeIndication;
+pedidoWithCallback.isFetchingStore = pedido.isFetchingStore;
+pedidoWithCallback.lastPhoneNumber = pedido.lastPhoneNumber;
+pedidoWithCallback.nameController.addListener(_updateTabs);
+_pedidos.add(pedidoWithCallback);
     }
     if (_pedidos.isEmpty) {
       final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
@@ -359,12 +357,13 @@ Future<void> _savePersistedData(PedidoState pedido) async {
   }
 
   Future<void> _loadPersistedData(PedidoState pedido) async {
+  final authProvider = Provider.of<AuthProvider>(context, listen: false);
   final prefs = await SharedPreferences.getInstance();
   final index = _pedidos.indexOf(pedido);
   if (index >= 0 && prefs.getString('phone_$index') == null) {
     pedido.phoneController.text = '';
     pedido.nameController.text = '';
-    pedido.emailController.text = '';
+    pedido.emailController.text = 'orders@aogosto.com.br';
     pedido.cepController.text = '';
     pedido.addressController.text = '';
     pedido.numberController.text = '';
@@ -390,12 +389,13 @@ Future<void> _savePersistedData(PedidoState pedido) async {
     pedido.isAddressSectionExpanded = true;
     pedido.isProductsSectionExpanded = true;
     pedido.isShippingSectionExpanded = true;
-    await logToFile('Initialized new pedido for index $index with default values');
+    pedido.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
+    await logToFile('Initialized new pedido for index $index with default values, selectedVendedor=${pedido.selectedVendedor}');
     return;
   }
   pedido.phoneController.text = prefs.getString('phone_$index') ?? '';
   pedido.nameController.text = prefs.getString('name_$index') ?? '';
-  pedido.emailController.text = prefs.getString('email_$index') ?? '';
+  pedido.emailController.text = 'orders@aogosto.com.br';
   pedido.cepController.text = prefs.getString('cep_$index') ?? '';
   pedido.addressController.text = prefs.getString('address_$index') ?? '';
   pedido.numberController.text = prefs.getString('number_$index') ?? '';
@@ -433,10 +433,11 @@ Future<void> _savePersistedData(PedidoState pedido) async {
   pedido.isAddressSectionExpanded = prefs.getBool('isAddressSectionExpanded_$index') ?? true;
   pedido.isProductsSectionExpanded = prefs.getBool('isProductsSectionExpanded_$index') ?? true;
   pedido.isShippingSectionExpanded = prefs.getBool('isShippingSectionExpanded_$index') ?? true;
+  pedido.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
   await logToFile(
       'Loaded persisted data for index $index: shippingMethod=${pedido.shippingMethod}, '
       'storeFinal=${pedido.storeFinal}, pickupStoreId=${pedido.pickupStoreId}, '
-      'shippingCost=${pedido.shippingCost}');
+      'shippingCost=${pedido.shippingCost}, selectedVendedor=${pedido.selectedVendedor}');
 }
 
   Future<void> _addNewPedido() async {
@@ -444,26 +445,29 @@ Future<void> _savePersistedData(PedidoState pedido) async {
     setState(() {
       _isAddingTab = true;
     });
-    try {
-      final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
-      newPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      newPedido.schedulingTime = '09:00 - 12:00';
-      newPedido.shippingMethod = 'delivery';
-      newPedido.nameController.addListener(_updateTabs);
-      await _loadPersistedData(newPedido);
-      await logToFile('Novo pedido criado: shippingMethod=${newPedido.shippingMethod}, selectedPaymentMethod=${newPedido.selectedPaymentMethod}');
-      setState(() {
-        _pedidos.add(newPedido);
-        _currentTabIndex = _pedidos.length - 1;
-        _tabController.dispose();
-        _tabController = TabController(
-          length: _pedidos.length,
-          vsync: this,
-          initialIndex: _currentTabIndex,
-        );
-        _tabController.addListener(_handleTabSelection);
-      });
-    } catch (e) {
+  try {
+  final authProvider = Provider.of<AuthProvider>(context, listen: false);
+final billingCompany = authProvider.userId != null ? authProvider.userId.toString() : '7';
+  final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
+  newPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+  newPedido.schedulingTime = '09:00 - 12:00';
+  newPedido.shippingMethod = 'delivery';
+  newPedido.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
+  newPedido.nameController.addListener(_updateTabs);
+  await _loadPersistedData(newPedido);
+  await logToFile('Novo pedido criado: shippingMethod=${newPedido.shippingMethod}, selectedVendedor=${newPedido.selectedVendedor}');
+  setState(() {
+    _pedidos.add(newPedido);
+    _currentTabIndex = _pedidos.length - 1;
+    _tabController.dispose();
+    _tabController = TabController(
+      length: _pedidos.length,
+      vsync: this,
+      initialIndex: _currentTabIndex,
+    );
+    _tabController.addListener(_handleTabSelection);
+  });
+} catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erro ao adicionar novo pedido: $e')),
       );
@@ -513,35 +517,31 @@ Future<void> _savePersistedData(PedidoState pedido) async {
       _isLoading = true;
     });
     try {
-      final service = CriarPedidoService();
-      final customer = await service.fetchCustomerByPhone(phone);
-      if (customer != null && mounted) {
-        setState(() {
-          currentPedido.nameController.text = customer['first_name'] + ' ' + (customer['last_name'] ?? '');
-          currentPedido.emailController.text = customer['email'] ?? '';
-          currentPedido.cepController.text = customer['billing']['postcode'] ?? '';
-          currentPedido.addressController.text = customer['billing']['address_1'] ?? '';
-          currentPedido.numberController.text = customer['billing']['number'] ?? '';
-          currentPedido.complementController.text = customer['billing']['address_2'] ?? '';
-          currentPedido.neighborhoodController.text = customer['billing']['neighborhood'] ?? '';
-          currentPedido.cityController.text = customer['billing']['city'] ?? '';
-        });
-        await _savePersistedData(currentPedido);
-        final cleanCep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '');
-        if (cleanCep.length == 8 && cleanCep != currentPedido.lastCep) {
-          currentPedido.lastCep = cleanCep; // Armazena o último CEP verificado
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              _checkStoreByCep();
-            }
-          });
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cliente não encontrado. Preencha os dados manualmente.')),
-        );
-      }
-    } catch (error) {
+  final service = CriarPedidoService();
+  final customer = await service.fetchCustomerByPhone(phone);
+  if (customer != null && mounted) {
+    currentPedido.nameController.text = customer['first_name'] + ' ' + (customer['last_name'] ?? '');
+    currentPedido.cepController.text = customer['billing']['postcode'] ?? '';
+    currentPedido.addressController.text = customer['billing']['address_1'] ?? '';
+    currentPedido.numberController.text = customer['billing']['number'] ?? '';
+    currentPedido.complementController.text = customer['billing']['address_2'] ?? '';
+    currentPedido.neighborhoodController.text = customer['billing']['neighborhood'] ?? '';
+    currentPedido.cityController.text = customer['billing']['city'] ?? '';
+    await _savePersistedData(currentPedido);
+    final cleanCep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '');
+    if (cleanCep.length == 8 && cleanCep != currentPedido.lastCep) {
+      currentPedido.lastCep = cleanCep;
+      await _checkStoreByCep();
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Cliente não encontrado. Preencha os dados manualmente.')),
+    );
+  }
+} catch (error) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erro ao buscar cliente: $error')),
       );
@@ -558,8 +558,33 @@ Future<void> _savePersistedData(PedidoState pedido) async {
 Future<void> _checkStoreByCep() async {
   final currentPedido = _pedidos[_currentTabIndex];
   final cep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
-  await logToFile('Checking CEP: $cep, shippingMethod: ${currentPedido.shippingMethod}, scheduling: ${currentPedido.schedulingDate}/${currentPedido.schedulingTime}');
-  if (cep.length != 8 && currentPedido.shippingMethod != 'pickup') {
+  await logToFile('Checking CEP: $cep, shippingMethod: ${currentPedido.shippingMethod}');
+  if (currentPedido.shippingMethod == 'pickup') {
+    setState(() {
+      currentPedido.shippingCost = 0.0;
+      currentPedido.shippingCostController.text = '0.00';
+      currentPedido.storeFinal = 'Central Distribuição (Sagrada Família)';
+      currentPedido.pickupStoreId = StoreNormalize.getId(currentPedido.storeFinal);
+      currentPedido.availablePaymentMethods = [
+        {'id': 'pagarme_custom_pix', 'title': 'Pix'},
+        {'id': 'stripe', 'title': 'Cartão de Crédito On-line'},
+        {'id': 'cod', 'title': 'Dinheiro na Entrega'},
+        {'id': 'custom_729b8aa9fc227ff', 'title': 'Cartão na Entrega'},
+        {'id': 'custom_e876f567c151864', 'title': 'Vale Alimentação'},
+      ];
+      currentPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+      if (currentPedido.selectedPaymentMethod.isNotEmpty &&
+          !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
+        currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
+            ? currentPedido.availablePaymentMethods.first['title'] ?? ''
+            : '';
+      }
+    });
+    await _savePersistedData(currentPedido);
+    await logToFile('Pickup selected: shippingCost=0.0, storeFinal=${currentPedido.storeFinal}, pickupStoreId=${currentPedido.pickupStoreId}');
+    return;
+  }
+  if (cep.length != 8) {
     await logToFile('CEP is incomplete, resetting store and cost.');
     setState(() {
       currentPedido.shippingCost = 0.0;
@@ -569,6 +594,31 @@ Future<void> _checkStoreByCep() async {
       currentPedido.availablePaymentMethods = [];
       currentPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
     });
+    await _savePersistedData(currentPedido);
+    if (mounted) setState(() {});
+    return;
+  }
+  // Verificar cache de CEP
+  final prefs = await SharedPreferences.getInstance();
+  final cacheKey = 'cep_data_$cep';
+  final cachedData = prefs.getString(cacheKey);
+  if (cachedData != null) {
+    final data = jsonDecode(cachedData);
+    setState(() {
+      currentPedido.storeFinal = data['store_final'] ?? 'Central Distribuição (Sagrada Família)';
+      currentPedido.pickupStoreId = data['pickup_store_id'] ?? StoreNormalize.getId(currentPedido.storeFinal);
+      currentPedido.shippingCost = data['shipping_cost'] ?? 0.0;
+      currentPedido.shippingCostController.text = currentPedido.shippingCost.toStringAsFixed(2);
+      currentPedido.availablePaymentMethods = List<Map<String, String>>.from(data['payment_methods'] ?? []);
+      currentPedido.paymentAccounts = Map<String, String>.from(data['payment_accounts'] ?? {'stripe': 'stripe', 'pagarme': 'central'});
+      if (currentPedido.selectedPaymentMethod.isNotEmpty &&
+          !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
+        currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
+            ? currentPedido.availablePaymentMethods.first['title'] ?? ''
+            : '';
+      }
+    });
+    await logToFile('Loaded CEP data from cache: $cachedData');
     await _savePersistedData(currentPedido);
     return;
   }
@@ -582,44 +632,32 @@ Future<void> _checkStoreByCep() async {
       'delivery_date': currentPedido.shippingMethod == 'delivery' ? normalizedDate : '',
       'pickup_date': currentPedido.shippingMethod == 'pickup' ? normalizedDate : '',
     };
-    await logToFile('Sending request to store-decision endpoint: ${jsonEncode(requestBody)}');
     final storeResponse = await http.post(
       Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(requestBody),
-    ).timeout(Duration(seconds: 15), onTimeout: () {
+    ).timeout(const Duration(seconds: 10), onTimeout: () {
       throw Exception('Timeout ao buscar opções de entrega');
     });
-    await logToFile('Store decision response status: ${storeResponse.statusCode}, body: ${storeResponse.body}');
+    await logToFile('Store decision response: ${storeResponse.statusCode}, body: ${storeResponse.body}');
     double shippingCost = 0.0;
     if (currentPedido.shippingMethod == 'delivery') {
-      await logToFile('Fetching shipping cost for CEP: $cep');
       final costResponse = await http.get(
         Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
         headers: {'Content-Type': 'application/json'},
-      ).timeout(Duration(seconds: 15), onTimeout: () {
+      ).timeout(const Duration(seconds: 10), onTimeout: () {
         throw Exception('Timeout ao buscar custo de frete');
       });
-      await logToFile('Shipping cost response status: ${costResponse.statusCode}, body: ${costResponse.body}');
       if (costResponse.statusCode == 200) {
         final costData = jsonDecode(costResponse.body);
-        if (costData['status'] == 'success' && costData['shipping_options'] != null && costData['shipping_options'].isNotEmpty) {
+        if (costData['status'] == 'success' && costData['shipping_options']?.isNotEmpty == true) {
           shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
-        } else {
-          await logToFile('Nenhuma opção de frete válida retornada para CEP: $cep');
-          shippingCost = 0.0;
         }
-      } else {
-        throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode} - ${costResponse.body}');
       }
     }
     if (storeResponse.statusCode == 200) {
       final data = jsonDecode(storeResponse.body);
-      final newStoreFinal = data['effective_store_final']?.toString() ?? data['store_final']?.toString();
-      if (newStoreFinal == null) {
-        throw Exception('Nenhuma loja válida retornada pelo endpoint store-decision.');
-      }
-      
+      final newStoreFinal = data['effective_store_final']?.toString() ?? data['store_final']?.toString() ?? 'Central Distribuição (Sagrada Família)';
       setState(() {
         currentPedido.storeFinal = newStoreFinal;
         currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(newStoreFinal);
@@ -645,13 +683,8 @@ Future<void> _checkStoreByCep() async {
             seenTitles.add(title);
           }
         }
-        final paymentAccounts = data['payment_accounts'] as Map?;
-        currentPedido.paymentAccounts = paymentAccounts != null
-            ? paymentAccounts.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''))
-            : {
-                'stripe': newStoreFinal == 'Unidade Barreiro' ? 'stripe_cc' : newStoreFinal == 'Unidade Sion' ? 'eh_stripe_pay' : 'stripe',
-                'pagarme': newStoreFinal == 'Unidade Barreiro' ? 'barreiro' : newStoreFinal == 'Unidade Sion' ? 'sion' : 'central'
-              };
+        final paymentAccounts = data['payment_accounts'] as Map? ?? {'stripe': 'stripe', 'pagarme': 'central'};
+        currentPedido.paymentAccounts = paymentAccounts.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''));
         if (currentPedido.selectedPaymentMethod.isNotEmpty &&
             !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
           currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
@@ -659,12 +692,22 @@ Future<void> _checkStoreByCep() async {
               : '';
         }
       });
+      // Salvar no cache
+      await prefs.setString(
+          cacheKey,
+          jsonEncode({
+            'store_final': newStoreFinal,
+            'pickup_store_id': currentPedido.pickupStoreId,
+            'shipping_cost': shippingCost,
+            'payment_methods': currentPedido.availablePaymentMethods,
+            'payment_accounts': currentPedido.paymentAccounts,
+          }));
       await _savePersistedData(currentPedido);
     } else {
-      throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode} - ${storeResponse.body}');
+      throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode}');
     }
-  } catch (e, stackTrace) {
-    await logToFile('Exceção em _checkStoreByCep: $e, StackTrace: $stackTrace');
+  } catch (e) {
+    await logToFile('Erro em _checkStoreByCep: $e');
     setState(() {
       currentPedido.storeFinal = 'Central Distribuição (Sagrada Família)';
       currentPedido.pickupStoreId = '86261';
@@ -685,12 +728,11 @@ Future<void> _checkStoreByCep() async {
             : '';
       }
     });
-  } finally {
-    setState(() => _isLoading = false);
     await _savePersistedData(currentPedido);
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
   }
 }
-
 
   Future<void> _createOrder() async {
   final currentPedido = _pedidos[_currentTabIndex];
@@ -703,7 +745,6 @@ Future<void> _checkStoreByCep() async {
     await logToFile('Erro de validação - Telefone: $phone, Cleaned: ${phone.replaceAll(RegExp(r'\D'), '')}, isPhoneValid: false');
   }
   if (currentPedido.nameController.text.isEmpty) errors.add('O nome do cliente é obrigatório');
-  if (currentPedido.selectedVendedor.isEmpty) errors.add('Selecione um vendedor');
   if (currentPedido.shippingMethod == 'delivery' && currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').length != 8) {
     errors.add('Digite um CEP válido (8 dígitos) para entrega');
   }
@@ -844,7 +885,7 @@ Future<void> _checkStoreByCep() async {
     await logToFile('[_createOrder] Selecionado (label): ${currentPedido.selectedPaymentMethod} -> slug="$methodSlug"');
     final order = await service.createOrder(
       customerName: currentPedido.nameController.text,
-      customerEmail: currentPedido.emailController.text,
+      customerEmail: 'orders@aogosto.com.br',
       customerPhone: phone,
       billingCompany: billingCompany,
       products: currentPedido.products,
@@ -1089,7 +1130,7 @@ Future<void> _checkStoreByCep() async {
     }
   } catch (error) {
     await logToFile('Erro ao gerar link de pagamento: $error');
-    throw error;
+    rethrow;
   }
 }
 
@@ -1322,7 +1363,7 @@ class KeepAliveTab extends StatefulWidget {
   final Future<void> Function() clearLocalData;
 
   const KeepAliveTab({
-    Key? key,
+    super.key,
     required this.pedido,
     required this.fetchCustomer,
     required this.createOrder,
@@ -1332,7 +1373,7 @@ class KeepAliveTab extends StatefulWidget {
     required this.resultMessage,
     required this.setStateCallback,
     required this.clearLocalData,
-  }) : super(key: key);
+  });
 
   @override
   _KeepAliveTabState createState() => _KeepAliveTabState();
@@ -1465,31 +1506,14 @@ Widget build(BuildContext context) {
                 key: _formKey,
                 child: Column(
                   children: [
-                     CustomerSection(
+                  CustomerSection(
   phoneController: widget.pedido.phoneController,
   onPhoneChanged: null,
-  onPhoneSubmitted: (String value) {
-    print('Telefone submetido: $value');
-    widget.savePersistedData(widget.pedido);
-  },
+  onPhoneSubmitted: (value) => widget.savePersistedData(widget.pedido),
   onFetchCustomer: widget.fetchCustomer,
   nameController: widget.pedido.nameController,
   onNameChanged: null,
-  onNameSubmitted: (String value) {
-    widget.savePersistedData(widget.pedido);
-  },
-  emailController: widget.pedido.emailController,
-  onEmailChanged: null,
-  onEmailSubmitted: (String value) {
-    widget.savePersistedData(widget.pedido);
-  },
-  selectedVendedor: widget.pedido.selectedVendedor,
-  onVendedorChanged: (value) {
-    widget.setStateCallback();
-    widget.pedido.selectedVendedor = value ?? 'Alline';
-    widget.savePersistedData(widget.pedido);
-  },
-  validator: (value) => null,
+  onNameSubmitted: (value) => widget.savePersistedData(widget.pedido),
   isLoading: widget.isLoading,
 ),
 const SizedBox(height: 16),
@@ -1630,22 +1654,33 @@ ShippingSection(
       }
     });
   },
-  onShippingMethodUpdated: (method) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        widget.setStateCallback();
-        widget.pedido.shippingMethod = method;
-        if (method == 'pickup') {
+  onShippingMethodUpdated: (method) async {
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    if (mounted) {
+      widget.setStateCallback();
+      widget.pedido.shippingMethod = method;
+      if (method == 'pickup') {
+        widget.pedido.shippingCost = 0.0;
+        widget.pedido.shippingCostController.text = '0.00';
+        widget.pedido.storeFinal = 'Central Distribuição (Sagrada Família)';
+        widget.pedido.pickupStoreId = StoreNormalize.getId(widget.pedido.storeFinal);
+        await widget.savePersistedData(widget.pedido);
+      } else {
+        final cleanCep = widget.pedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
+        if (cleanCep.length == 8) {
+          await widget.checkStoreByCep();
+        } else {
           widget.pedido.shippingCost = 0.0;
           widget.pedido.shippingCostController.text = '0.00';
-          widget.pedido.storeFinal = 'Central Distribuição (Sagrada Família)';
-          widget.pedido.pickupStoreId = StoreNormalize.getId(widget.pedido.storeFinal);
+          await widget.savePersistedData(widget.pedido);
         }
-        widget.savePersistedData(widget.pedido);
-        widget.checkStoreByCep();
       }
-    });
-  },
+      await widget.savePersistedData(widget.pedido);
+    }
+  });
+},
+
+
   onShippingCostUpdated: (cost) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {

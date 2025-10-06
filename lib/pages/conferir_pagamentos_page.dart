@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class ConferirPagamentosPage extends StatefulWidget {
-  const ConferirPagamentosPage({Key? key}) : super(key: key);
+  const ConferirPagamentosPage({super.key});
 
   @override
   State<ConferirPagamentosPage> createState() => _ConferirPagamentosPageState();
@@ -577,9 +577,9 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
                                   ),
                                 ),
                               ],
-                              color: MaterialStateProperty.resolveWith<Color?>(
-                                (Set<MaterialState> states) {
-                                  return states.contains(MaterialState.hovered)
+                              color: WidgetStateProperty.resolveWith<Color?>(
+                                (Set<WidgetState> states) {
+                                  return states.contains(WidgetState.hovered)
                                       ? Colors.orange.shade50.withOpacity(0.5)
                                       : null;
                                 },

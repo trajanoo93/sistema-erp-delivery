@@ -11,10 +11,10 @@ class PedidoDetailDialog extends StatelessWidget {
   final List<Map<String, String>> produtosParsed;
 
   const PedidoDetailDialog({
-    Key? key,
+    super.key,
     required this.pedido,
     required this.produtosParsed,
-  }) : super(key: key);
+  });
 
   // Função para formatar o número de telefone
   String formatPhoneNumber(String phone) {

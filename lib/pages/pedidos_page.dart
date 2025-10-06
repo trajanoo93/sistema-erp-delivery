@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'pedido_detail_dialog.dart';
 
 class PedidosPage extends StatefulWidget {
-  const PedidosPage({Key? key}) : super(key: key);
+  const PedidosPage({super.key});
 
   @override
   State<PedidosPage> createState() => _PedidosPageState();
@@ -596,7 +596,7 @@ class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin
   Widget _buildFilterCard() {
     final String counterText = '$_totalFilteredCount Pedido${_totalFilteredCount != 1 ? 's' : ''}';
 
-    InputBorder _outline() => OutlineInputBorder(
+    InputBorder outline() => OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: primaryColor.withOpacity(0.5)),
         );
@@ -621,9 +621,9 @@ class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin
                 decoration: InputDecoration(
                   labelText: 'Buscar ID ou Nome',
                   prefixIcon: Icon(Icons.search, color: primaryColor),
-                  border: _outline(),
-                  enabledBorder: _outline(),
-                  focusedBorder: _outline().copyWith(borderSide: BorderSide(color: primaryColor, width: 2)),
+                  border: outline(),
+                  enabledBorder: outline(),
+                  focusedBorder: outline().copyWith(borderSide: BorderSide(color: primaryColor, width: 2)),
                   filled: true,
                   fillColor: Colors.white,
                 ),
@@ -641,9 +641,9 @@ class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin
                 decoration: InputDecoration(
                   labelText: 'Data Inicial',
                   prefixIcon: Icon(Icons.date_range, color: primaryColor),
-                  border: _outline(),
-                  enabledBorder: _outline(),
-                  focusedBorder: _outline().copyWith(borderSide: BorderSide(color: primaryColor, width: 2)),
+                  border: outline(),
+                  enabledBorder: outline(),
+                  focusedBorder: outline().copyWith(borderSide: BorderSide(color: primaryColor, width: 2)),
                   filled: true,
                   fillColor: Colors.white,
                 ),
@@ -658,9 +658,9 @@ class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin
                 decoration: InputDecoration(
                   labelText: 'Data Final',
                   prefixIcon: Icon(Icons.date_range, color: primaryColor),
-                  border: _outline(),
-                  enabledBorder: _outline(),
-                  focusedBorder: _outline().copyWith(borderSide: BorderSide(color: primaryColor, width: 2)),
+                  border: outline(),
+                  enabledBorder: outline(),
+                  focusedBorder: outline().copyWith(borderSide: BorderSide(color: primaryColor, width: 2)),
                   filled: true,
                   fillColor: Colors.white,
                 ),
@@ -674,9 +674,9 @@ class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin
                 decoration: InputDecoration(
                   labelText: 'Status',
                   prefixIcon: Icon(Icons.filter_list, color: primaryColor),
-                  border: _outline(),
-                  enabledBorder: _outline(),
-                  focusedBorder: _outline().copyWith(borderSide: BorderSide(color: primaryColor, width: 2)),
+                  border: outline(),
+                  enabledBorder: outline(),
+                  focusedBorder: outline().copyWith(borderSide: BorderSide(color: primaryColor, width: 2)),
                   filled: true,
                   fillColor: Colors.white,
                 ),
@@ -721,7 +721,7 @@ class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin
       color: Colors.black87,
     );
 
-    Widget _cell(String text, double w) => SizedBox(
+    Widget cell(String text, double w) => SizedBox(
           width: w,
           child: Text(text, style: headStyle, overflow: TextOverflow.ellipsis),
         );
@@ -739,15 +739,15 @@ class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin
         ),
         child: Row(
           children: [
-            _cell('ID', _cId),
-            _cell('Horário', _cHora),
-            _cell('Nome', _cNome),
-            _cell('Bairro', _cBairro),
-            _cell('CD', _cCd),
-            _cell('Status', _cStatus),
-            _cell('Entrega', _cEntrega),
-            _cell('Data Agend.', _cData),
-            _cell('Horário Agend.', _cHoraAg),
+            cell('ID', _cId),
+            cell('Horário', _cHora),
+            cell('Nome', _cNome),
+            cell('Bairro', _cBairro),
+            cell('CD', _cCd),
+            cell('Status', _cStatus),
+            cell('Entrega', _cEntrega),
+            cell('Data Agend.', _cData),
+            cell('Horário Agend.', _cHoraAg),
             const SizedBox(width: _cEndPad),
           ],
         ),

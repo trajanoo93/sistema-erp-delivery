@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'criar_pedido_service.dart';
 
 class ProductSelectionDialog extends StatefulWidget {
-  const ProductSelectionDialog({Key? key}) : super(key: key);
+  const ProductSelectionDialog({super.key});
 
   @override
   State<ProductSelectionDialog> createState() => _ProductSelectionDialogState();
@@ -137,7 +137,7 @@ class _ProductSelectionDialogState extends State<ProductSelectionDialog> {
                           },
                         ),
                       );
-                    }).toList(),
+                    }),
                     const SizedBox(height: 16),
                     if (availableVariations.isNotEmpty)
                       Column(
@@ -189,7 +189,7 @@ class _ProductSelectionDialogState extends State<ProductSelectionDialog> {
                                 ),
                               ),
                             );
-                          }).toList(),
+                          }),
                         ],
                       )
                     else

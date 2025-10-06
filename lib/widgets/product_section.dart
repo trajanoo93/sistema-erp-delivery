@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:erp_painel_delivery/product_selection_dialog.dart';
 
 class ProductSection extends StatefulWidget {
   final List<Map<String, dynamic>> products;
@@ -11,13 +10,13 @@ class ProductSection extends StatefulWidget {
   final Function(int, double)? onUpdatePrice;
 
   const ProductSection({
-    Key? key,
+    super.key,
     required this.products,
     required this.onRemoveProduct,
     required this.onAddProduct,
     required this.onUpdateQuantity,
     this.onUpdatePrice,
-  }) : super(key: key);
+  });
 
   @override
   State<ProductSection> createState() => _ProductSectionState();
@@ -227,7 +226,7 @@ else
               ),
             ),
           );
-        }).toList(),
+        }),
         const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,

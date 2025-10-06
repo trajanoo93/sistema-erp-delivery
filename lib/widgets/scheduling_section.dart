@@ -12,14 +12,14 @@ class SchedulingSection extends StatefulWidget {
   final String? initialTimeSlot;
 
   const SchedulingSection({
-    Key? key,
+    super.key,
     required this.shippingMethod,
     required this.storeFinal,
     required this.onDateTimeUpdated,
     required this.onSchedulingChanged,
     this.initialDate,
     this.initialTimeSlot,
-  }) : super(key: key);
+  });
 
   @override
   State<SchedulingSection> createState() => _SchedulingSectionState();
@@ -142,18 +142,15 @@ class _SchedulingSectionState extends State<SchedulingSection> {
             onSecondary: Colors.black87,
             surface: isDarkMode ? Colors.grey[800]! : Colors.white,
             onSurface: isDarkMode ? Colors.white70 : Colors.black87,
-            background: isDarkMode ? Colors.grey[900]! : Colors.white,
-            onBackground: isDarkMode ? Colors.white70 : Colors.black87,
             error: Colors.red.shade700,
             onError: Colors.white,
           ),
-          dialogBackgroundColor: isDarkMode ? Colors.grey[800] : Colors.white,
           textButtonTheme: TextButtonThemeData(
             style: TextButton.styleFrom(
               foregroundColor: const Color(0xFFF28C38),
               textStyle: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
             ),
-          ),
+          ), dialogTheme: DialogThemeData(backgroundColor: isDarkMode ? Colors.grey[800] : Colors.white),
         ),
         child: child!,  // Remova a Column e os botões extras; use apenas o child original
       );

@@ -5,11 +5,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as latlng;
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart'; // Para localização atual
 
 class UnidadesPage extends StatefulWidget {
-  const UnidadesPage({Key? key}) : super(key: key);
+  const UnidadesPage({super.key});
 
   @override
   _UnidadesPageState createState() => _UnidadesPageState();
@@ -436,7 +435,7 @@ class _UnidadesPageState extends State<UnidadesPage> {
                                         color: Colors.red,
                                         size: 30,
                                       ),
-                                    )).toList(),
+                                    )),
                               ],
                             ),
                           ],

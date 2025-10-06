@@ -13,7 +13,6 @@ import 'pages/criar_link_page.dart';
 import 'pages/conferir_pagamentos_page.dart';
 import 'pages/suporte_page.dart';
 import 'pages/unidades_page.dart';
-import 'pages/ranking_page.dart';
 import 'pages/feedback.dart';
 import 'pages/auth_page.dart';
 import 'provider.dart';
@@ -23,7 +22,7 @@ void main() {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -46,14 +45,25 @@ class MyApp extends StatelessWidget {
           Locale('en', 'US'),
           Locale('pt', 'BR'),
         ],
+
+        // 👇 ADICIONE ESTE BUILDER AQUI
+        builder: (context, child) {
+          // Aumenta globalmente o tamanho das fontes (ex: 1.2 = +20%)
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaleFactor: 1.2),
+            child: child!,
+          );
+        },
+
         home: const AuthWrapper(),
       ),
     );
   }
 }
 
+
 class AuthWrapper extends StatefulWidget {
-  const AuthWrapper({Key? key}) : super(key: key);
+  const AuthWrapper({super.key});
 
   @override
   State<AuthWrapper> createState() => _AuthWrapperState();
@@ -92,7 +102,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({Key? key}) : super(key: key);
+  const HomePage({super.key});
 
   @override
   State<HomePage> createState() => _HomePageState();

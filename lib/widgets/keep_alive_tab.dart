@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class KeepAliveTab extends StatefulWidget {
   final Widget child;
 
-  const KeepAliveTab({Key? key, required this.child}) : super(key: key);
+  const KeepAliveTab({super.key, required this.child});
 
   @override
   _KeepAliveTabState createState() => _KeepAliveTabState();

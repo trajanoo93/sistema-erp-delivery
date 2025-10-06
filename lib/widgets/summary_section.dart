@@ -19,7 +19,7 @@ class SummarySection extends StatefulWidget {
   final String? resultMessage;
 
   const SummarySection({
-    Key? key,
+    super.key,
     required this.totalOriginal,
     required this.isCouponValid,
     required this.couponCode,
@@ -30,7 +30,7 @@ class SummarySection extends StatefulWidget {
     required this.pedido,
     this.paymentInstructions,
     this.resultMessage,
-  }) : super(key: key);
+  });
 
   @override
   _SummarySectionState createState() => _SummarySectionState();
@@ -394,7 +394,7 @@ class _SummarySectionState extends State<SummarySection> {
           if (widget.paymentInstructions != null && paymentText != null && paymentText.isNotEmpty) ...[
             const SizedBox(height: 20),
             AnimatedSlide(
-              offset: paymentText!.isNotEmpty ? Offset.zero : const Offset(0, 0.2),
+              offset: paymentText.isNotEmpty ? Offset.zero : const Offset(0, 0.2),
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOut,
               child: Container(

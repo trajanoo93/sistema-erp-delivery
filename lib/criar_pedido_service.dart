@@ -324,7 +324,7 @@ class CriarPedidoService {
               'key': attr['name'],
               'value': attr['option'],
             };
-          })?.toList() ?? [];
+          }).toList() ?? [];
         }
         return lineItem;
       }).toList();

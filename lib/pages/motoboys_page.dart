@@ -3,7 +3,7 @@ import 'package:flutter/services.dart'; // Para copiar texto
 import 'package:url_launcher/url_launcher.dart'; // Para abrir links
 
 class MotoboysPage extends StatelessWidget {
-  const MotoboysPage({Key? key}) : super(key: key);
+  const MotoboysPage({super.key});
 
   // Função para abrir links
   Future<void> _launchUrl(String url) async {

@@ -51,7 +51,7 @@ class StoreNormalize {
 }
 
 class CriarLinkPage extends StatefulWidget {
-  const CriarLinkPage({Key? key}) : super(key: key);
+  const CriarLinkPage({super.key});
 
   @override
   State<CriarLinkPage> createState() => _CriarLinkPageState();

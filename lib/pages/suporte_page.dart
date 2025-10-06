@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class SuportePage extends StatefulWidget {
-  const SuportePage({Key? key}) : super(key: key);
+  const SuportePage({super.key});
 
   @override
   State<SuportePage> createState() => _SuportePageState();

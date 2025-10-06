@@ -3,7 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:erp_painel_delivery/models/pedido_state.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:intl/intl.dart';
 import '../utils/log_utils.dart';
 
@@ -17,7 +16,7 @@ class ShippingSection extends StatefulWidget {
   final Future<void> Function(PedidoState)? savePersistedData; // Callback
 
   const ShippingSection({
-    Key? key,
+    super.key,
     required this.cep,
     required this.onStoreUpdated,
     required this.onShippingMethodUpdated,
@@ -25,7 +24,7 @@ class ShippingSection extends StatefulWidget {
     required this.pedido,
     required this.onSchedulingChanged,
     this.savePersistedData,
-  }) : super(key: key);
+  });
 
   @override
   State<ShippingSection> createState() => _ShippingSectionState();
@@ -36,7 +35,7 @@ class _ShippingSectionState extends State<ShippingSection> {
   String _pickupStore = '';
   String _storeFinal = '';
   String _pickupStoreId = '';
-  List<String> _pickupStores = [
+  final List<String> _pickupStores = [
     'Central Distribuição (Sagrada Família)',
     'Unidade Barreiro',
     'Unidade Sion',
@@ -292,7 +291,9 @@ class _ShippingSectionState extends State<ShippingSection> {
     if (n.contains('cartao na entrega') ||
         n.contains('cartao de debito ou credito') ||
         n.contains('maquininha') ||
-        n.contains('pos')) return 'custom_729b8aa9fc227ff';
+        n.contains('pos')) {
+      return 'custom_729b8aa9fc227ff';
+    }
     if (n.contains('vale alimentacao') || n == 'va') return 'custom_e876f567c151864';
     return 'cod';
   }
