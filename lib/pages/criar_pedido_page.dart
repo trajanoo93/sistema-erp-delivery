@@ -555,6 +555,7 @@ final billingCompany = authProvider.userId != null ? authProvider.userId.toStrin
   });
 }
 
+
 Future<void> _checkStoreByCep() async {
   final currentPedido = _pedidos[_currentTabIndex];
   final cep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
@@ -605,12 +606,20 @@ Future<void> _checkStoreByCep() async {
   if (cachedData != null) {
     final data = jsonDecode(cachedData);
     setState(() {
-      currentPedido.storeFinal = data['store_final'] ?? 'Central Distribuição (Sagrada Família)';
-      currentPedido.pickupStoreId = data['pickup_store_id'] ?? StoreNormalize.getId(currentPedido.storeFinal);
-      currentPedido.shippingCost = data['shipping_cost'] ?? 0.0;
+      currentPedido.storeFinal = data['store_final']?.toString() ?? 'Central Distribuição (Sagrada Família)';
+      currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(currentPedido.storeFinal);
+      currentPedido.shippingCost = double.tryParse(data['shipping_cost']?.toString() ?? '0.0') ?? 0.0;
       currentPedido.shippingCostController.text = currentPedido.shippingCost.toStringAsFixed(2);
-      currentPedido.availablePaymentMethods = List<Map<String, String>>.from(data['payment_methods'] ?? []);
-      currentPedido.paymentAccounts = Map<String, String>.from(data['payment_accounts'] ?? {'stripe': 'stripe', 'pagarme': 'central'});
+      final rawPaymentMethods = data['payment_methods'] as List<dynamic>? ?? [];
+      currentPedido.availablePaymentMethods = rawPaymentMethods.map((m) {
+        final map = m as Map;
+        return {
+          'id': map['id']?.toString() ?? '',
+          'title': map['title']?.toString() ?? '',
+        };
+      }).toList();
+      currentPedido.paymentAccounts = (data['payment_accounts'] as Map?)?.map((key, value) => MapEntry(key.toString(), value?.toString() ?? '')) ??
+          {'stripe': 'stripe', 'pagarme': 'central'};
       if (currentPedido.selectedPaymentMethod.isNotEmpty &&
           !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
         currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
@@ -618,7 +627,7 @@ Future<void> _checkStoreByCep() async {
             : '';
       }
     });
-    await logToFile('Loaded CEP data from cache: $cachedData');
+    await logToFile('Loaded CEP data from cache: storeFinal=${currentPedido.storeFinal}, shippingCost=${currentPedido.shippingCost}');
     await _savePersistedData(currentPedido);
     return;
   }
@@ -632,6 +641,7 @@ Future<void> _checkStoreByCep() async {
       'delivery_date': currentPedido.shippingMethod == 'delivery' ? normalizedDate : '',
       'pickup_date': currentPedido.shippingMethod == 'pickup' ? normalizedDate : '',
     };
+    await logToFile('Sending store-decision request: ${jsonEncode(requestBody)}');
     final storeResponse = await http.post(
       Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
       headers: {'Content-Type': 'application/json'},
@@ -639,20 +649,74 @@ Future<void> _checkStoreByCep() async {
     ).timeout(const Duration(seconds: 10), onTimeout: () {
       throw Exception('Timeout ao buscar opções de entrega');
     });
-    await logToFile('Store decision response: ${storeResponse.statusCode}, body: ${storeResponse.body}');
+    await logToFile('Store decision response: status=${storeResponse.statusCode}, body=${storeResponse.body}');
     double shippingCost = 0.0;
+    String? zoneName;
     if (currentPedido.shippingMethod == 'delivery') {
+      await logToFile('Fetching shipping cost for CEP: $cep');
       final costResponse = await http.get(
         Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
         headers: {'Content-Type': 'application/json'},
       ).timeout(const Duration(seconds: 10), onTimeout: () {
         throw Exception('Timeout ao buscar custo de frete');
       });
+      await logToFile('Shipping cost response: status=${costResponse.statusCode}, body=${costResponse.body}');
       if (costResponse.statusCode == 200) {
         final costData = jsonDecode(costResponse.body);
-        if (costData['status'] == 'success' && costData['shipping_options']?.isNotEmpty == true) {
-          shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
+        if (costData['status'] == 'success') {
+          if (costData['shipping_options']?.isNotEmpty == true) {
+            shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
+            await logToFile('Shipping cost calculated: $shippingCost');
+          } else {
+            await logToFile('No valid shipping options for CEP: $cep');
+            zoneName = costData['zone_name']?.toString();
+            if (zoneName != null) {
+              // Extrair apenas o nome da área (ex.: "Sabará" de "Sabará - R$ 29,90")
+              zoneName = zoneName.split('-')[0].trim();
+            }
+            shippingCost = 0.0;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Infelizmente, não estamos atendendo esta região no momento devido ao horário. '
+                  'Caso necessário, peça para o administrador desbloquear a área${zoneName != null ? ' $zoneName' : ''}.',
+                ),
+                duration: const Duration(seconds: 5),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        } else {
+          await logToFile('Shipping cost endpoint returned error: ${costData['message'] ?? 'Unknown error'}');
+          zoneName = costData['zone_name']?.toString();
+          if (zoneName != null) {
+            zoneName = zoneName.split('-')[0].trim();
+          }
+          shippingCost = 0.0;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Infelizmente, não estamos atendendo esta região no momento devido ao horário. '
+                'Caso necessário, peça para o administrador desbloquear a área${zoneName != null ? ' $zoneName' : ''}.',
+              ),
+              duration: const Duration(seconds: 5),
+              backgroundColor: Colors.red,
+            ),
+          );
         }
+      } else {
+        await logToFile('Error fetching shipping cost: status=${costResponse.statusCode}, body=${costResponse.body}');
+        shippingCost = 0.0;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Infelizmente, não estamos atendendo esta região no momento devido ao horário. '
+              'Caso necessário, peça para o administrador desbloquear a área.',
+            ),
+            duration: const Duration(seconds: 5),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
     if (storeResponse.statusCode == 200) {
@@ -664,25 +728,12 @@ Future<void> _checkStoreByCep() async {
         currentPedido.shippingCost = shippingCost;
         currentPedido.shippingCostController.text = shippingCost.toStringAsFixed(2);
         final rawPaymentMethods = List<Map>.from(data['payment_methods'] ?? []);
-        currentPedido.availablePaymentMethods = [];
-        final seenTitles = <String>{};
-        for (var m in rawPaymentMethods) {
-          final id = m['id']?.toString() ?? '';
-          final title = m['title']?.toString() ?? '';
-          if (id == 'woo_payment_on_delivery' && !seenTitles.contains('Dinheiro na Entrega')) {
-            currentPedido.availablePaymentMethods.add({'id': 'cod', 'title': 'Dinheiro na Entrega'});
-            seenTitles.add('Dinheiro na Entrega');
-          } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') && !seenTitles.contains('Cartão de Crédito On-line')) {
-            currentPedido.availablePaymentMethods.add({
-              'id': data['payment_accounts']['stripe'] ?? 'stripe',
-              'title': 'Cartão de Crédito On-line'
-            });
-            seenTitles.add('Cartão de Crédito On-line');
-          } else if (!seenTitles.contains(title)) {
-            currentPedido.availablePaymentMethods.add({'id': id, 'title': title});
-            seenTitles.add(title);
-          }
-        }
+        currentPedido.availablePaymentMethods = rawPaymentMethods.map((m) {
+          return {
+            'id': m['id']?.toString() ?? '',
+            'title': m['title']?.toString() ?? '',
+          };
+        }).toList();
         final paymentAccounts = data['payment_accounts'] as Map? ?? {'stripe': 'stripe', 'pagarme': 'central'};
         currentPedido.paymentAccounts = paymentAccounts.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''));
         if (currentPedido.selectedPaymentMethod.isNotEmpty &&
@@ -692,17 +743,20 @@ Future<void> _checkStoreByCep() async {
               : '';
         }
       });
-      // Salvar no cache
-      await prefs.setString(
-          cacheKey,
-          jsonEncode({
-            'store_final': newStoreFinal,
-            'pickup_store_id': currentPedido.pickupStoreId,
-            'shipping_cost': shippingCost,
-            'payment_methods': currentPedido.availablePaymentMethods,
-            'payment_accounts': currentPedido.paymentAccounts,
-          }));
+      // Salvar no cache apenas se shipping_options não for vazio (evitar cache para desativado)
+      if (shippingCost > 0.0) {
+        await prefs.setString(
+            cacheKey,
+            jsonEncode({
+              'store_final': newStoreFinal,
+              'pickup_store_id': currentPedido.pickupStoreId,
+              'shipping_cost': shippingCost,
+              'payment_methods': currentPedido.availablePaymentMethods,
+              'payment_accounts': currentPedido.paymentAccounts,
+            }));
+      }
       await _savePersistedData(currentPedido);
+      await logToFile('Updated store and cost: storeFinal=${currentPedido.storeFinal}, shippingCost=$shippingCost');
     } else {
       throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode}');
     }
