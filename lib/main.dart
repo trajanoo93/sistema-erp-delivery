@@ -46,14 +46,6 @@ class MyApp extends StatelessWidget {
           Locale('pt', 'BR'),
         ],
 
-        // 👇 ADICIONE ESTE BUILDER AQUI
-        builder: (context, child) {
-          // Aumenta globalmente o tamanho das fontes (ex: 1.2 = +20%)
-          return MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaleFactor: 1.2),
-            child: child!,
-          );
-        },
 
         home: const AuthWrapper(),
       ),

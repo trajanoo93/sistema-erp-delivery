@@ -1,3 +1,4 @@
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -43,9 +44,10 @@ class PedidoState with ChangeNotifier {
   String? storeIndication;
   bool isFetchingStore = false;
   String? lastPhoneNumber;
-  String lastCep = ''; // Adicionado para rastrear o último CEP verificado
-  List<Map<String, String>> availablePaymentMethods = [];
-  Map<String, String> paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+  String lastCep = '';
+  List<Map<String, dynamic>> availablePaymentMethods = []; // Alterado para dynamic
+  Map<String, dynamic> paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'}; // Alterado para dynamic
+
   final VoidCallback? onCouponValidated;
 
   // Credenciais do WooCommerce
@@ -61,7 +63,6 @@ class PedidoState with ChangeNotifier {
   }
 
   void reset() {
-    // Libera os controladores atuais
     phoneController.dispose();
     nameController.dispose();
     emailController.dispose();
@@ -76,7 +77,6 @@ class PedidoState with ChangeNotifier {
     couponController.dispose();
     shippingCostController.dispose();
 
-    // Inicializa novos controladores
     _initializeControllers();
     shippingCostController.text = shippingCost.toStringAsFixed(2);
     couponController.addListener(_onCouponChanged);
@@ -84,7 +84,7 @@ class PedidoState with ChangeNotifier {
     availablePaymentMethods = [];
     paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
     schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    lastCep = ''; // Resetar lastCep
+    lastCep = '';
     notifyListeners();
   }
 
@@ -104,7 +104,6 @@ class PedidoState with ChangeNotifier {
   }
 
   void resetControllers() {
-    // Libera os controladores atuais
     phoneController.dispose();
     nameController.dispose();
     emailController.dispose();
@@ -119,14 +118,13 @@ class PedidoState with ChangeNotifier {
     couponController.dispose();
     shippingCostController.dispose();
 
-    // Inicializa novos controladores
     _initializeControllers();
     shippingCostController.text = shippingCost.toStringAsFixed(2);
     couponController.addListener(_onCouponChanged);
     selectedPaymentMethod = '';
     availablePaymentMethods = [];
     paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
-    lastCep = ''; // Resetar lastCep
+    lastCep = '';
     notifyListeners();
   }
 
@@ -254,51 +252,54 @@ class PedidoState with ChangeNotifier {
       'storeIndication': storeIndication,
       'isFetchingStore': isFetchingStore,
       'lastPhoneNumber': lastPhoneNumber,
-      'lastCep': lastCep, // Adicionado para persistência
+      'lastCep': lastCep,
       'availablePaymentMethods': availablePaymentMethods,
       'paymentAccounts': paymentAccounts,
     };
   }
 
   factory PedidoState.fromJson(Map<String, dynamic> json) {
-    final pedido = PedidoState();
-    pedido.phoneController.text = json['phone'] ?? '';
-    pedido.nameController.text = json['name'] ?? '';
-    pedido.emailController.text = json['email'] ?? '';
-    pedido.cepController.text = json['cep'] ?? '';
-    pedido.addressController.text = json['address'] ?? '';
-    pedido.numberController.text = json['number'] ?? '';
-    pedido.complementController.text = json['complement'] ?? '';
-    pedido.neighborhoodController.text = json['neighborhood'] ?? '';
-    pedido.cityController.text = json['city'] ?? '';
-    pedido.notesController.text = json['notes'] ?? '';
-    pedido.couponController.text = json['coupon'] ?? '';
+    final pedido = PedidoState(onCouponValidated: () {});
+    pedido.phoneController.text = json['phone']?.toString() ?? '';
+    pedido.nameController.text = json['name']?.toString() ?? '';
+    pedido.emailController.text = json['email']?.toString() ?? '';
+    pedido.cepController.text = json['cep']?.toString() ?? '';
+    pedido.addressController.text = json['address']?.toString() ?? '';
+    pedido.numberController.text = json['number']?.toString() ?? '';
+    pedido.complementController.text = json['complement']?.toString() ?? '';
+    pedido.neighborhoodController.text = json['neighborhood']?.toString() ?? '';
+    pedido.cityController.text = json['city']?.toString() ?? '';
+    pedido.notesController.text = json['notes']?.toString() ?? '';
+    pedido.couponController.text = json['coupon']?.toString() ?? '';
     pedido.products = List<Map<String, dynamic>>.from(json['products'] ?? []);
-    pedido.shippingMethod = json['shippingMethod'] ?? '';
-    pedido.selectedVendedor = json['selectedVendedor'] ?? 'Alline';
-    pedido.shippingCost = (json['shippingCost'] ?? 0.0).toDouble();
-    pedido.shippingCostController.text = json['shippingCostController'] ?? '0.00';
-    pedido.storeFinal = json['storeFinal'] ?? '';
-    pedido.pickupStoreId = json['pickupStoreId'] ?? '';
-    pedido.selectedPaymentMethod = json['selectedPaymentMethod'] ?? '';
-    pedido.showNotesField = json['showNotesField'] ?? false;
-    pedido.showCouponField = json['showCouponField'] ?? false;
-    pedido.schedulingDate = json['schedulingDate'] ?? '';
-    pedido.schedulingTime = json['schedulingTime'] ?? '';
-    pedido.isCustomerSectionExpanded = json['isCustomerSectionExpanded'] ?? true;
-    pedido.isAddressSectionExpanded = json['isAddressSectionExpanded'] ?? true;
-    pedido.isProductsSectionExpanded = json['isProductsSectionExpanded'] ?? true;
-    pedido.isShippingSectionExpanded = json['isShippingSectionExpanded'] ?? true;
-    pedido.paymentInstructions = json['paymentInstructions'];
-    pedido.couponErrorMessage = json['couponErrorMessage'];
-    pedido.discountAmount = (json['discountAmount'] ?? 0.0).toDouble();
-    pedido.isCouponValid = json['isCouponValid'] ?? false;
-    pedido.storeIndication = json['storeIndication'] ?? '';
-    pedido.isFetchingStore = json['isFetchingStore'] ?? false;
-    pedido.lastPhoneNumber = json['lastPhoneNumber'];
-    pedido.lastCep = json['lastCep'] ?? ''; // Adicionado para persistência
-    pedido.availablePaymentMethods = List<Map<String, String>>.from(json['availablePaymentMethods'] ?? []);
-    pedido.paymentAccounts = Map<String, String>.from(json['paymentAccounts'] ?? {'stripe': 'stripe', 'pagarme': 'central'});
+    pedido.shippingMethod = json['shippingMethod']?.toString() ?? '';
+    pedido.selectedVendedor = json['selectedVendedor']?.toString() ?? 'Alline';
+    pedido.shippingCost = (json['shippingCost'] as num?)?.toDouble() ?? 0.0;
+    pedido.shippingCostController.text = json['shippingCostController']?.toString() ?? '0.00';
+    pedido.storeFinal = json['storeFinal']?.toString() ?? '';
+    pedido.pickupStoreId = json['pickupStoreId']?.toString() ?? '';
+    pedido.selectedPaymentMethod = json['selectedPaymentMethod']?.toString() ?? '';
+    pedido.showNotesField = json['showNotesField'] as bool? ?? false;
+    pedido.showCouponField = json['showCouponField'] as bool? ?? false;
+    pedido.schedulingDate = json['schedulingDate']?.toString() ?? '';
+    pedido.schedulingTime = json['schedulingTime']?.toString() ?? '';
+    pedido.isCustomerSectionExpanded = json['isCustomerSectionExpanded'] as bool? ?? true;
+    pedido.isAddressSectionExpanded = json['isAddressSectionExpanded'] as bool? ?? true;
+    pedido.isProductsSectionExpanded = json['isProductsSectionExpanded'] as bool? ?? true;
+    pedido.isShippingSectionExpanded = json['isShippingSectionExpanded'] as bool? ?? true;
+    pedido.paymentInstructions = json['paymentInstructions']?.toString();
+    pedido.couponErrorMessage = json['couponErrorMessage']?.toString();
+    pedido.discountAmount = (json['discountAmount'] as num?)?.toDouble() ?? 0.0;
+    pedido.isCouponValid = json['isCouponValid'] as bool? ?? false;
+    pedido.storeIndication = json['storeIndication']?.toString();
+    pedido.isFetchingStore = json['isFetchingStore'] as bool? ?? false;
+    pedido.lastPhoneNumber = json['lastPhoneNumber']?.toString();
+    pedido.lastCep = json['lastCep']?.toString() ?? '';
+    pedido.availablePaymentMethods = (json['availablePaymentMethods'] as List<dynamic>?)
+        ?.map((m) => Map<String, dynamic>.from(m as Map))
+        .toList() ?? [];
+    pedido.paymentAccounts = (json['paymentAccounts'] as Map<dynamic, dynamic>?)
+        ?.map((k, v) => MapEntry(k.toString(), v)) ?? {'stripe': 'stripe', 'pagarme': 'central'};
     return pedido;
   }
 
