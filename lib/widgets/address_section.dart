@@ -1,12 +1,17 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
-import 'package:flutter/services.dart';
-import 'dart:async';
+import 'package:retry/retry.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:erp_painel_delivery/models/pedido_state.dart';
+
+import '../models/pedido_state.dart';
 import '../utils/log_utils.dart';
 
 class AddressSection extends StatefulWidget {
@@ -53,9 +58,7 @@ class AddressSection extends StatefulWidget {
 
 class _AddressSectionState extends State<AddressSection> {
   bool _isFetchingStore = false;
-  Timer? _debounce;
   bool _isEditingShippingCost = false;
-  double _tempShippingCost = 0.0;
   final _shippingCostController = TextEditingController();
   late VoidCallback _addressListener;
   late VoidCallback _numberListener;
@@ -69,18 +72,21 @@ class _AddressSectionState extends State<AddressSection> {
     type: MaskAutoCompletionType.lazy,
   );
 
+  static const cacheDuration = 86400000; // 24 horas em milissegundos
+
   @override
   void initState() {
     super.initState();
     _setupListeners();
-    _shippingCostController.text = widget.pedido?.shippingCostController.text ?? widget.externalShippingCost.toStringAsFixed(2);
+    _shippingCostController.text = widget.pedido?.shippingCostController.text ??
+        widget.externalShippingCost.toStringAsFixed(2);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // FIX: usar o controller recebido no widget (e não por dentro de pedido) e evitar acesso inseguro
       if (widget.shippingMethod == 'pickup' && widget.cepController.text.isNotEmpty) {
         resetSection();
         logToFile('Reset AddressSection due to shippingMethod change to pickup');
       }
-      logToFile('AddressSection initialized: cep=${widget.cepController.text}, shippingMethod=${widget.shippingMethod}');
+      logToFile(
+          'AddressSection initialized: cep=${widget.cepController.text}, shippingMethod=${widget.shippingMethod}');
     });
   }
 
@@ -103,12 +109,30 @@ class _AddressSectionState extends State<AddressSection> {
     widget.savePersistedData?.call();
   }
 
+  Future<bool> _isConnected() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    return connectivityResult != ConnectivityResult.none;
+  }
+
   Future<void> _fetchAddressFromCep(String cep) async {
-    logToFile('Fetching address from ViaCEP for CEP: $cep');
+    logToFile('Fetching address for CEP: $cep');
+
+    if (!await _isConnected()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sem conexão com a internet. Verifique sua rede.')),
+        );
+      }
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final cacheKey = 'cep_address_$cep';
     final cachedData = prefs.getString(cacheKey);
-    if (cachedData != null) {
+    final cachedTimestamp = prefs.getInt('${cacheKey}_timestamp') ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    if (cachedData != null && (now - cachedTimestamp < cacheDuration)) {
       final data = jsonDecode(cachedData);
       setState(() {
         widget.addressController.text = data['logradouro'] ?? '';
@@ -125,15 +149,23 @@ class _AddressSectionState extends State<AddressSection> {
     setState(() {
       _isFetchingStore = true;
     });
+
+    const maxAttempts = 3;
     try {
-      final response = await http
-          .get(
-            Uri.parse('https://viacep.com.br/ws/$cep/json/'),
-            headers: {'Content-Type': 'application/json'},
-          )
-          .timeout(const Duration(seconds: 8), onTimeout: () {
-        throw Exception('Timeout ao buscar endereço');
-      });
+      // Tenta ViaCEP primeiro
+      final response = await retry(
+        () => http
+            .get(
+              Uri.parse('https://viacep.com.br/ws/$cep/json/'),
+              headers: {'Content-Type': 'application/json'},
+            )
+            .timeout(const Duration(seconds: 8)),
+        retryIf: (e) => e is SocketException || e is TimeoutException,
+        maxAttempts: maxAttempts,
+        delayFactor: const Duration(seconds: 1),
+        onRetry: (e) => logToFile('Retrying ViaCEP request due to: $e'),
+      );
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['erro'] != true) {
@@ -152,22 +184,77 @@ class _AddressSectionState extends State<AddressSection> {
               'complemento': data['complemento'] ?? '',
             }),
           );
+          await prefs.setInt('${cacheKey}_timestamp', DateTime.now().millisecondsSinceEpoch);
           widget.onChanged('');
           await widget.savePersistedData?.call();
-          logToFile('Address updated from ViaCEP: logradouro=${data['logradouro']}, bairro=${data['bairro']}, cidade=${data['localidade']}');
+          logToFile(
+              'Address updated from ViaCEP: logradouro=${data['logradouro']}, bairro=${data['bairro']}, cidade=${data['localidade']}');
+          return;
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('CEP não encontrado')),
-          );
+          throw Exception('CEP não encontrado no ViaCEP');
         }
       } else {
-        throw Exception('Erro ao buscar endereço: ${response.statusCode}');
+        throw Exception('Erro ao buscar endereço no ViaCEP: ${response.statusCode}');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro na requisição: $e')),
-      );
-      logToFile('ViaCEP exception: $e');
+      logToFile('ViaCEP failed: $e, falling back to AwesomeAPI');
+
+      // Fallback para AwesomeAPI
+      try {
+        final response = await retry(
+          () => http
+              .get(
+                Uri.parse('https://cep.awesomeapi.com.br/json/$cep'),
+                headers: {'Content-Type': 'application/json'},
+              )
+              .timeout(const Duration(seconds: 8)),
+          retryIf: (e) => e is SocketException || e is TimeoutException,
+          maxAttempts: maxAttempts,
+          delayFactor: const Duration(seconds: 1),
+          onRetry: (e) => logToFile('Retrying AwesomeAPI request due to: $e'),
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          setState(() {
+            widget.addressController.text = data['address'] ?? '';
+            widget.neighborhoodController.text = data['district'] ?? '';
+            widget.cityController.text = data['city'] ?? '';
+            widget.complementController.text = '';
+          });
+          await prefs.setString(
+            cacheKey,
+            jsonEncode({
+              'logradouro': data['address'] ?? '',
+              'bairro': data['district'] ?? '',
+              'localidade': data['city'] ?? '',
+              'complemento': '',
+            }),
+          );
+          await prefs.setInt('${cacheKey}_timestamp', DateTime.now().millisecondsSinceEpoch);
+          widget.onChanged('');
+          await widget.savePersistedData?.call();
+          logToFile(
+              'Address updated from AwesomeAPI: logradouro=${data['address']}, bairro=${data['district']}, cidade=${data['city']}');
+        } else {
+          throw Exception('Erro ao buscar endereço na AwesomeAPI: ${response.statusCode}');
+        }
+      } catch (e) {
+        String errorMessage = 'Erro ao buscar endereço. Tente novamente.';
+        if (e is SocketException) {
+          errorMessage = 'Falha na conexão com a internet. Verifique sua rede.';
+        } else if (e is TimeoutException) {
+          errorMessage = 'Tempo de resposta excedido. Tente novamente.';
+        } else if (e.toString().contains('CEP não encontrado')) {
+          errorMessage = 'CEP não encontrado';
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMessage)),
+          );
+        }
+        logToFile('AwesomeAPI exception: $e');
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -180,8 +267,7 @@ class _AddressSectionState extends State<AddressSection> {
   void _startEditingShippingCost() {
     setState(() {
       _isEditingShippingCost = true;
-      _tempShippingCost = widget.pedido?.shippingCost ?? widget.externalShippingCost;
-      _shippingCostController.text = _tempShippingCost.toStringAsFixed(2);
+      _shippingCostController.text = (widget.pedido?.shippingCost ?? widget.externalShippingCost).toStringAsFixed(2);
     });
   }
 
@@ -205,7 +291,8 @@ class _AddressSectionState extends State<AddressSection> {
   void _cancelEditingShippingCost() {
     setState(() {
       _isEditingShippingCost = false;
-      _shippingCostController.text = widget.pedido?.shippingCostController.text ?? widget.externalShippingCost.toStringAsFixed(2);
+      _shippingCostController.text = widget.pedido?.shippingCostController.text ??
+          widget.externalShippingCost.toStringAsFixed(2);
     });
     logToFile('Shipping cost edit cancelled, reverted to: ${_shippingCostController.text}');
   }
@@ -215,8 +302,6 @@ class _AddressSectionState extends State<AddressSection> {
     setState(() {
       _isEditingShippingCost = false;
       _shippingCostController.text = '0.00';
-      _debounce?.cancel();
-      _debounce = null;
     });
     widget.cepController.clear();
     widget.addressController.clear();
@@ -238,9 +323,43 @@ class _AddressSectionState extends State<AddressSection> {
     widget.complementController.removeListener(_complementListener);
     widget.neighborhoodController.removeListener(_neighborhoodListener);
     widget.cityController.removeListener(_cityListener);
-    _debounce?.cancel();
     _shippingCostController.dispose();
     super.dispose();
+  }
+
+  InputDecoration _buildInputDecoration({
+    required String labelText,
+    Icon? prefixIcon,
+    Widget? suffixIcon,
+    bool filled = true,
+    Color? fillColor,
+  }) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = const Color(0xFFF28C38);
+
+    return InputDecoration(
+      labelText: labelText,
+      labelStyle: GoogleFonts.poppins(
+        color: isDarkMode ? Colors.white70 : Colors.black54,
+        fontWeight: FontWeight.w500,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: primaryColor, width: 2),
+      ),
+      prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
+      filled: filled,
+      fillColor: fillColor ?? Colors.white,
+    );
   }
 
   @override
@@ -272,24 +391,8 @@ class _AddressSectionState extends State<AddressSection> {
                 flex: 3,
                 child: TextFormField(
                   controller: widget.cepController,
-                  decoration: InputDecoration(
+                  decoration: _buildInputDecoration(
                     labelText: 'CEP',
-                    labelStyle: GoogleFonts.poppins(
-                      color: isDarkMode ? Colors.white70 : Colors.black54,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: primaryColor, width: 2),
-                    ),
                     prefixIcon: Icon(Icons.location_on, color: primaryColor),
                     suffixIcon: _isFetchingStore
                         ? Padding(
@@ -300,8 +403,6 @@ class _AddressSectionState extends State<AddressSection> {
                             ),
                           )
                         : null,
-                    filled: true,
-                    fillColor: Colors.white,
                   ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [_cepMaskFormatter],
@@ -318,9 +419,11 @@ class _AddressSectionState extends State<AddressSection> {
                   onTap: () async {
                     final cleanCep = widget.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
                     if (cleanCep.length != 8) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('CEP inválido. Insira 8 dígitos.')),
-                      );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('CEP inválido. Insira 8 dígitos.')),
+                        );
+                      }
                       return;
                     }
                     await _fetchAddressFromCep(cleanCep);
@@ -328,7 +431,6 @@ class _AddressSectionState extends State<AddressSection> {
                     if (widget.shippingMethod == 'delivery' && widget.checkStoreByCep != null) {
                       await widget.checkStoreByCep!();
                     } else if (widget.shippingMethod == 'pickup') {
-                      // FIX: tratar nulos de forma segura
                       const allowedStores = [
                         'Central Distribuição (Sagrada Família)',
                         'Unidade Barreiro',
@@ -336,12 +438,12 @@ class _AddressSectionState extends State<AddressSection> {
                       ];
                       const allowedIds = ['86261', '110727', '127163'];
 
-                      final currentStoreFinal = (widget.pedido?.storeFinal ?? '');
+                      final currentStoreFinal = widget.pedido?.storeFinal ?? '';
                       final storeFinal = currentStoreFinal.isNotEmpty && allowedStores.contains(currentStoreFinal)
                           ? currentStoreFinal
                           : 'Central Distribuição (Sagrada Família)';
 
-                      final currentStoreId = (widget.pedido?.pickupStoreId ?? '');
+                      final currentStoreId = widget.pedido?.pickupStoreId ?? '';
                       final storeId = currentStoreId.isNotEmpty && allowedIds.contains(currentStoreId)
                           ? currentStoreId
                           : '86261';
@@ -409,7 +511,6 @@ class _AddressSectionState extends State<AddressSection> {
               ),
             ],
           ),
-
           if (widget.shippingMethod == 'delivery' && widget.externalShippingCost > 0) ...[
             const SizedBox(height: 8),
             AnimatedContainer(
@@ -446,33 +547,13 @@ class _AddressSectionState extends State<AddressSection> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _shippingCostController,
-                decoration: InputDecoration(
+                decoration: _buildInputDecoration(
                   labelText: 'Editar Taxa de Frete (R\$)',
-                  labelStyle: GoogleFonts.poppins(
-                    color: isDarkMode ? Colors.white70 : Colors.black54,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: primaryColor, width: 2),
-                  ),
                   prefixIcon: Icon(Icons.monetization_on, color: primaryColor),
-                  filled: true,
-                  fillColor: Colors.white,
                 ),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 onChanged: (value) {
-                  setState(() {
-                    _tempShippingCost = double.tryParse(value.replaceAll(',', '.')) ?? 0.0;
-                  });
+                  setState(() {});
                 },
               ),
               const SizedBox(height: 16),
@@ -493,8 +574,6 @@ class _AddressSectionState extends State<AddressSection> {
               ),
             ],
           ],
-
-          // FIX: condição null-safe para exibir loja selecionada
           if ((widget.pedido?.storeFinal ?? '').isNotEmpty) ...[
             const SizedBox(height: 8),
             Container(
@@ -533,7 +612,6 @@ class _AddressSectionState extends State<AddressSection> {
               ),
             ),
           ],
-
           const SizedBox(height: 20),
           Row(
             children: [
@@ -541,27 +619,9 @@ class _AddressSectionState extends State<AddressSection> {
                 flex: 3,
                 child: TextFormField(
                   controller: widget.addressController,
-                  decoration: InputDecoration(
+                  decoration: _buildInputDecoration(
                     labelText: 'Endereço',
-                    labelStyle: GoogleFonts.poppins(
-                      color: isDarkMode ? Colors.white70 : Colors.black54,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: primaryColor, width: 2),
-                    ),
                     prefixIcon: Icon(Icons.home, color: primaryColor),
-                    filled: true,
-                    fillColor: Colors.white,
                   ),
                   onFieldSubmitted: _onFieldChanged,
                 ),
@@ -571,26 +631,8 @@ class _AddressSectionState extends State<AddressSection> {
                 flex: 1,
                 child: TextFormField(
                   controller: widget.numberController,
-                  decoration: InputDecoration(
+                  decoration: _buildInputDecoration(
                     labelText: 'Número',
-                    labelStyle: GoogleFonts.poppins(
-                      color: isDarkMode ? Colors.white70 : Colors.black54,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: primaryColor, width: 2),
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
                   ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -602,81 +644,27 @@ class _AddressSectionState extends State<AddressSection> {
           const SizedBox(height: 20),
           TextFormField(
             controller: widget.complementController,
-            decoration: InputDecoration(
+            decoration: _buildInputDecoration(
               labelText: 'Complemento (opcional)',
-              labelStyle: GoogleFonts.poppins(
-                color: isDarkMode ? Colors.white70 : Colors.black54,
-                fontWeight: FontWeight.w500,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor, width: 2),
-              ),
               prefixIcon: Icon(Icons.edit, color: primaryColor),
-              filled: true,
-              fillColor: Colors.white,
             ),
             onFieldSubmitted: _onFieldChanged,
           ),
           const SizedBox(height: 20),
           TextFormField(
             controller: widget.neighborhoodController,
-            decoration: InputDecoration(
+            decoration: _buildInputDecoration(
               labelText: 'Bairro',
-              labelStyle: GoogleFonts.poppins(
-                color: isDarkMode ? Colors.white70 : Colors.black54,
-                fontWeight: FontWeight.w500,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor, width: 2),
-              ),
               prefixIcon: Icon(Icons.location_city, color: primaryColor),
-              filled: true,
-              fillColor: Colors.white,
             ),
             onFieldSubmitted: _onFieldChanged,
           ),
           const SizedBox(height: 20),
           TextFormField(
             controller: widget.cityController,
-            decoration: InputDecoration(
+            decoration: _buildInputDecoration(
               labelText: 'Cidade',
-              labelStyle: GoogleFonts.poppins(
-                color: isDarkMode ? Colors.white70 : Colors.black54,
-                fontWeight: FontWeight.w500,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor, width: 2),
-              ),
               prefixIcon: Icon(Icons.location_city, color: primaryColor),
-              filled: true,
-              fillColor: Colors.white,
             ),
             onFieldSubmitted: _onFieldChanged,
           ),
