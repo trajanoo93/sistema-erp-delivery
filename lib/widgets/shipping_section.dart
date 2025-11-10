@@ -13,7 +13,7 @@ class ShippingSection extends StatefulWidget {
   final Function(double) onShippingCostUpdated;
   final PedidoState pedido;
   final Function() onSchedulingChanged;
-  final Future<void> Function(PedidoState)? savePersistedData; // Callback
+  final Future<void> Function(PedidoState)? savePersistedData;
 
   const ShippingSection({
     super.key,
@@ -98,191 +98,197 @@ class _ShippingSectionState extends State<ShippingSection> {
   }
 
   Future<void> _fetchStoreDecision(String cep) async {
-  await logToFile('Fetching store decision for CEP: $cep, Shipping Method: $_shippingMethod, Pickup Store: $_pickupStore, Pedido StoreFinal: ${widget.pedido.storeFinal}');
+    await logToFile('Fetching store decision for CEP: $cep, Shipping Method: $_shippingMethod, Pickup Store: $_pickupStore, Pedido StoreFinal: ${widget.pedido.storeFinal}');
 
-  if (_shippingMethod == 'pickup') {
-    if (mounted) {
-      setState(() {
-        _storeFinal = _pickupStore.isNotEmpty && _pickupStores.contains(_pickupStore)
-            ? _pickupStore
-            : _pickupStores.first;
-        _pickupStoreId = _pickupStoreIds[_storeFinal] ?? '86261';
-        widget.pedido.shippingCost = 0.0;
-        widget.pedido.shippingCostController.text = '0.00';
-        widget.pedido.storeFinal = _storeFinal;
-        widget.pedido.pickupStoreId = _pickupStoreId;
-      });
+    if (_shippingMethod == 'pickup') {
+      if (mounted) {
+        setState(() {
+          _storeFinal = _pickupStore.isNotEmpty && _pickupStores.contains(_pickupStore)
+              ? _pickupStore
+              : _pickupStores.first;
+          _pickupStoreId = _pickupStoreIds[_storeFinal] ?? '86261';
+          widget.pedido.storeFinal = _storeFinal;
+          widget.pedido.pickupStoreId = _pickupStoreId;
+        });
+      }
+      widget.onShippingCostUpdated(0.0);
+      widget.onStoreUpdated(_storeFinal, _pickupStoreId);
+      widget.pedido.notifyListeners();
+      await logToFile('Pickup mode: Reset shippingCost to 0.0, storeFinal: $_storeFinal, pickupStoreId: $_pickupStoreId');
+      widget.savePersistedData?.call(widget.pedido);
+      return;
     }
-    widget.onShippingCostUpdated(0.0);
-    widget.onStoreUpdated(_storeFinal, _pickupStoreId);
-    widget.pedido.notifyListeners();
-    await logToFile('Pickup mode: Reset shippingCost to 0.0, storeFinal: $_storeFinal, pickupStoreId: $_pickupStoreId');
-    widget.savePersistedData?.call(widget.pedido);
-    return;
-  }
 
-  if (cep.length != 8) {
-    await logToFile('CEP is incomplete, resetting store and cost.');
-    if (mounted) {
-      setState(() {
-        _storeFinal = '';
-        _pickupStoreId = '';
-        widget.pedido.availablePaymentMethods = [];
-        widget.pedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
-        widget.pedido.shippingCost = 0.0;
-        widget.pedido.shippingCostController.text = '0.00';
-        widget.pedido.storeFinal = '';
-        widget.pedido.pickupStoreId = '';
-      });
+    if (cep.length != 8) {
+      await logToFile('CEP is incomplete, resetting store and cost.');
+      if (mounted) {
+        setState(() {
+          _storeFinal = '';
+          _pickupStoreId = '';
+          widget.pedido.availablePaymentMethods = [];
+          widget.pedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+          widget.pedido.shippingCost = 0.0;
+          widget.pedido.shippingCostController.text = '0.00';
+          widget.pedido.storeFinal = '';
+          widget.pedido.pickupStoreId = '';
+        });
+      }
+      widget.onShippingCostUpdated(0.0);
+      widget.onStoreUpdated('', '');
+      widget.pedido.notifyListeners();
+      widget.savePersistedData?.call(widget.pedido);
+      return;
     }
-    widget.onShippingCostUpdated(0.0);
-    widget.onStoreUpdated('', '');
-    widget.pedido.notifyListeners();
-    widget.savePersistedData?.call(widget.pedido);
-    return;
-  }
 
-  try {
-    final normalizedDate = widget.pedido.schedulingDate.isEmpty
-        ? DateFormat('yyyy-MM-dd').format(DateTime.now())
-        : widget.pedido.schedulingDate;
-    final requestBody = {
-      'cep': cep,
-      'shipping_method': _shippingMethod,
-      'pickup_store': _shippingMethod == 'pickup' ? _pickupStore : '',
-      'delivery_date': _shippingMethod == 'delivery' ? normalizedDate : '',
-      'pickup_date': _shippingMethod == 'pickup' ? normalizedDate : '',
-    };
-    await logToFile('Sending request to store-decision endpoint: ${jsonEncode(requestBody)}');
-    final storeResponse = await http.post(
-      Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(requestBody),
-    ).timeout(const Duration(seconds: 15), onTimeout: () {
-      throw Exception('Timeout ao buscar opções de entrega');
-    });
-
-    await logToFile('Store decision response status: ${storeResponse.statusCode}, body: ${storeResponse.body}');
-
-    double shippingCost = 0.0;
-    if (_shippingMethod == 'delivery') {
-      await logToFile('Fetching shipping cost for CEP: $cep');
-      final costResponse = await http.get(
-        Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
+    try {
+      final normalizedDate = widget.pedido.schedulingDate.isEmpty
+          ? DateFormat('yyyy-MM-dd').format(DateTime.now())
+          : widget.pedido.schedulingDate;
+      final requestBody = {
+        'cep': cep,
+        'shipping_method': _shippingMethod,
+        'pickup_store': _shippingMethod == 'pickup' ? _pickupStore : '',
+        'delivery_date': _shippingMethod == 'delivery' ? normalizedDate : '',
+        'pickup_date': _shippingMethod == 'pickup' ? normalizedDate : '',
+      };
+      await logToFile('Sending request to store-decision endpoint: ${jsonEncode(requestBody)}');
+      final storeResponse = await http.post(
+        Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
         headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(requestBody),
       ).timeout(const Duration(seconds: 15), onTimeout: () {
-        throw Exception('Timeout ao buscar custo de frete');
+        throw Exception('Timeout ao buscar opções de entrega');
       });
 
-      await logToFile('Shipping cost response status: ${costResponse.statusCode}, body: ${costResponse.body}');
+      await logToFile('Store decision response status: ${storeResponse.statusCode}, body: ${storeResponse.body}');
 
-      if (costResponse.statusCode == 200) {
-        final costData = jsonDecode(costResponse.body);
-        if (costData['status'] == 'success' && costData['shipping_options'] != null && costData['shipping_options'].isNotEmpty) {
-          shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
+      double shippingCost = 0.0;
+      if (_shippingMethod == 'delivery') {
+        await logToFile('Fetching shipping cost for CEP: $cep');
+        final costResponse = await http.get(
+          Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
+          headers: {'Content-Type': 'application/json'},
+        ).timeout(const Duration(seconds: 15), onTimeout: () {
+          throw Exception('Timeout ao buscar custo de frete');
+        });
+
+        await logToFile('Shipping cost response status: ${costResponse.statusCode}, body: ${costResponse.body}');
+
+        if (costResponse.statusCode == 200) {
+          final costData = jsonDecode(costResponse.body);
+          if (costData['status'] == 'success' && costData['shipping_options'] != null && costData['shipping_options'].isNotEmpty) {
+            shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
+          } else {
+            await logToFile('Nenhuma opção de frete válida retornada para CEP: $cep');
+            shippingCost = 0.0;
+          }
         } else {
-          await logToFile('Nenhuma opção de frete válida retornada para CEP: $cep');
-          shippingCost = 0.0;
+          throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode} - ${costResponse.body}');
+        }
+      }
+
+      if (storeResponse.statusCode == 200) {
+        try {
+          final storeDecision = jsonDecode(storeResponse.body);
+          await logToFile('Parsed JSON: ${jsonEncode(storeDecision)}');
+          if (mounted) {
+            setState(() {
+              if (_shippingMethod == 'pickup') {
+                _storeFinal = _pickupStore.isNotEmpty && _pickupStores.contains(_pickupStore)
+                    ? _pickupStore
+                    : _pickupStores.first;
+                _pickupStoreId = _pickupStoreIds[_storeFinal] ?? '86261';
+              } else {
+                _storeFinal = storeDecision['effective_store_final']?.toString() ??
+                    storeDecision['store_final']?.toString() ??
+                    'Central Distribuição (Sagrada Família)';
+                _pickupStoreId = storeDecision['pickup_store_id']?.toString() ?? '86261';
+              }
+              widget.pedido.storeFinal = _storeFinal;
+              widget.pedido.pickupStoreId = _pickupStoreId;
+              final rawPaymentMethods = List<Map<String, dynamic>>.from(storeDecision['payment_methods'] ?? []);
+              widget.pedido.availablePaymentMethods = [];
+              final seenTitles = <String>{};
+              for (var m in rawPaymentMethods) {
+                final id = m['id']?.toString() ?? '';
+                final title = m['title']?.toString() ?? '';
+                if (id == 'woo_payment_on_delivery' && !seenTitles.contains('Dinheiro na Entrega')) {
+                  widget.pedido.availablePaymentMethods.add({'id': 'cod', 'title': 'Dinheiro na Entrega'});
+                  seenTitles.add('Dinheiro na Entrega');
+                } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') &&
+                    !seenTitles.contains('Cartão de Crédito On-line')) {
+                  widget.pedido.availablePaymentMethods.add({
+                    'id': storeDecision['payment_accounts']['stripe']?.toString() ?? 'stripe',
+                    'title': 'Cartão de Crédito On-line'
+                  });
+                  seenTitles.add('Cartão de Crédito On-line');
+                } else if (!seenTitles.contains(title)) {
+                  widget.pedido.availablePaymentMethods.add({'id': id, 'title': title});
+                  seenTitles.add(title);
+                }
+              }
+              final paymentAccounts = storeDecision['payment_accounts'] as Map?;
+              widget.pedido.paymentAccounts = paymentAccounts != null
+                  ? paymentAccounts.map((key, value) => MapEntry(key.toString(), value))
+                  : {'stripe': 'stripe', 'pagarme': 'central'};
+              if (!widget.pedido.availablePaymentMethods.any((m) => m['id'] == _paymentSlugFromLabel(widget.pedido.selectedPaymentMethod))) {
+                widget.pedido.selectedPaymentMethod = widget.pedido.availablePaymentMethods.isNotEmpty
+                    ? widget.pedido.availablePaymentMethods.first['title']?.toString() ?? ''
+                    : '';
+              }
+
+              // Só atualiza o custo se NÃO foi editado manualmente
+              if (!widget.pedido.isShippingCostManuallyEdited) {
+                widget.pedido.shippingCost = _shippingMethod == 'pickup' ? 0.0 : shippingCost;
+                widget.pedido.shippingCostController.text = widget.pedido.shippingCost.toStringAsFixed(2);
+              } else {
+                logToFile('Shipping cost NOT updated: manually edited'); // Sem await
+              }
+            });
+          }
+          await logToFile(
+              'Updated state - Store Final: $_storeFinal, Pickup Store ID: $_pickupStoreId, '
+              'Payment Methods: ${widget.pedido.availablePaymentMethods}, Payment Accounts: ${widget.pedido.paymentAccounts}, '
+              'Shipping Cost: ${widget.pedido.shippingCost}');
+          widget.onStoreUpdated(_storeFinal, _pickupStoreId);
+          widget.onShippingCostUpdated(widget.pedido.shippingCost);
+          widget.pedido.notifyListeners();
+          widget.savePersistedData?.call(widget.pedido);
+        } catch (e, stackTrace) {
+          await logToFile('Erro ao parsear resposta JSON: $e, StackTrace: $stackTrace');
+          throw Exception('Erro ao parsear resposta JSON: $e');
         }
       } else {
-        throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode} - ${costResponse.body}');
+        throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode} - ${storeResponse.body}');
       }
-    }
-
-    if (storeResponse.statusCode == 200) {
-      try {
-        final storeDecision = jsonDecode(storeResponse.body);
-        await logToFile('Parsed JSON: ${jsonEncode(storeDecision)}');
-        if (mounted) {
-          setState(() {
-            if (_shippingMethod == 'pickup') {
-              _storeFinal = _pickupStore.isNotEmpty && _pickupStores.contains(_pickupStore)
-                  ? _pickupStore
-                  : _pickupStores.first;
-              _pickupStoreId = _pickupStoreIds[_storeFinal] ?? '86261';
-            } else {
-              _storeFinal = storeDecision['effective_store_final']?.toString() ??
-                  storeDecision['store_final']?.toString() ??
-                  'Central Distribuição (Sagrada Família)';
-              _pickupStoreId = storeDecision['pickup_store_id']?.toString() ?? '86261';
-            }
-            widget.pedido.storeFinal = _storeFinal;
-            widget.pedido.pickupStoreId = _pickupStoreId;
-            final rawPaymentMethods = List<Map<String, dynamic>>.from(storeDecision['payment_methods'] ?? []);
-            widget.pedido.availablePaymentMethods = [];
-            final seenTitles = <String>{};
-            for (var m in rawPaymentMethods) {
-              final id = m['id']?.toString() ?? '';
-              final title = m['title']?.toString() ?? '';
-              if (id == 'woo_payment_on_delivery' && !seenTitles.contains('Dinheiro na Entrega')) {
-                widget.pedido.availablePaymentMethods.add({'id': 'cod', 'title': 'Dinheiro na Entrega'});
-                seenTitles.add('Dinheiro na Entrega');
-              } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') &&
-                  !seenTitles.contains('Cartão de Crédito On-line')) {
-                widget.pedido.availablePaymentMethods.add({
-                  'id': storeDecision['payment_accounts']['stripe']?.toString() ?? 'stripe',
-                  'title': 'Cartão de Crédito On-line'
-                });
-                seenTitles.add('Cartão de Crédito On-line');
-              } else if (!seenTitles.contains(title)) {
-                widget.pedido.availablePaymentMethods.add({'id': id, 'title': title});
-                seenTitles.add(title);
-              }
-            }
-            final paymentAccounts = storeDecision['payment_accounts'] as Map?;
-            widget.pedido.paymentAccounts = paymentAccounts != null
-                ? paymentAccounts.map((key, value) => MapEntry(key.toString(), value))
-                : {'stripe': 'stripe', 'pagarme': 'central'};
-            if (!widget.pedido.availablePaymentMethods.any((m) => m['id'] == _paymentSlugFromLabel(widget.pedido.selectedPaymentMethod))) {
-              widget.pedido.selectedPaymentMethod = widget.pedido.availablePaymentMethods.isNotEmpty
-                  ? widget.pedido.availablePaymentMethods.first['title']?.toString() ?? ''
-                  : '';
-            }
-            widget.pedido.shippingCost = _shippingMethod == 'pickup' ? 0.0 : shippingCost;
-            widget.pedido.shippingCostController.text = widget.pedido.shippingCost.toStringAsFixed(2);
-          });
-        }
-        await logToFile(
-            'Updated state - Store Final: $_storeFinal, Pickup Store ID: $_pickupStoreId, '
-            'Payment Methods: ${widget.pedido.availablePaymentMethods}, Payment Accounts: ${widget.pedido.paymentAccounts}, '
-            'Shipping Cost: ${widget.pedido.shippingCost}');
-        widget.onStoreUpdated(_storeFinal, _pickupStoreId);
-        widget.onShippingCostUpdated(widget.pedido.shippingCost);
-        widget.pedido.notifyListeners();
-        widget.savePersistedData?.call(widget.pedido);
-      } catch (e, stackTrace) {
-        await logToFile('Erro ao parsear resposta JSON: $e, StackTrace: $stackTrace');
-        throw Exception('Erro ao parsear resposta JSON: $e');
+    } catch (error, stackTrace) {
+      await logToFile('Error fetching store decision: $error, StackTrace: $stackTrace');
+      if (mounted) {
+        setState(() {
+          _storeFinal = 'Central Distribuição (Sagrada Família)';
+          _pickupStoreId = '86261';
+          widget.pedido.storeFinal = _storeFinal;
+          widget.pedido.pickupStoreId = _pickupStoreId;
+          widget.pedido.availablePaymentMethods = [
+            {'id': 'pagarme_custom_pix', 'title': 'Pix'},
+            {'id': 'stripe', 'title': 'Cartão de Crédito On-line'},
+            {'id': 'cod', 'title': 'Dinheiro na Entrega'},
+            {'id': 'custom_729b8aa9fc227ff', 'title': 'Cartão na Entrega'},
+            {'id': 'custom_e876f567c151864', 'title': 'Vale Alimentação'},
+          ];
+          widget.pedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+          if (!widget.pedido.isShippingCostManuallyEdited) {
+            widget.pedido.shippingCost = 0.0;
+            widget.pedido.shippingCostController.text = '0.00';
+          }
+        });
       }
-    } else {
-      throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode} - ${storeResponse.body}');
+      widget.onStoreUpdated(_storeFinal, _pickupStoreId);
+      widget.onShippingCostUpdated(widget.pedido.shippingCost);
+      widget.pedido.notifyListeners();
+      widget.savePersistedData?.call(widget.pedido);
     }
-  } catch (error, stackTrace) {
-    await logToFile('Error fetching store decision: $error, StackTrace: $stackTrace');
-    if (mounted) {
-      setState(() {
-        _storeFinal = 'Central Distribuição (Sagrada Família)';
-        _pickupStoreId = '86261';
-        widget.pedido.storeFinal = _storeFinal;
-        widget.pedido.pickupStoreId = _pickupStoreId;
-        widget.pedido.availablePaymentMethods = [
-          {'id': 'pagarme_custom_pix', 'title': 'Pix'},
-          {'id': 'stripe', 'title': 'Cartão de Crédito On-line'},
-          {'id': 'cod', 'title': 'Dinheiro na Entrega'},
-          {'id': 'custom_729b8aa9fc227ff', 'title': 'Cartão na Entrega'},
-          {'id': 'custom_e876f567c151864', 'title': 'Vale Alimentação'},
-        ];
-        widget.pedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
-        widget.pedido.shippingCost = 0.0;
-        widget.pedido.shippingCostController.text = '0.00';
-      });
-    }
-    widget.onStoreUpdated(_storeFinal, _pickupStoreId);
-    widget.onShippingCostUpdated(0.0);
-    widget.pedido.notifyListeners();
-    widget.savePersistedData?.call(widget.pedido);
   }
-}
 
   String _paymentSlugFromLabel(String uiLabel) {
     final n = uiLabel.toLowerCase().trim();
@@ -310,19 +316,19 @@ class _ShippingSectionState extends State<ShippingSection> {
     final primaryColor = const Color(0xFFF28C38);
 
     return AnimatedContainer(
-  duration: const Duration(milliseconds: 300),
-  curve: Curves.easeOutCubic,
-  decoration: BoxDecoration(
-    color: Colors.white, // Forçar fundo branco em ambos os temas
-    borderRadius: BorderRadius.circular(14),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withOpacity(0.05),
-        blurRadius: 12,
-        offset: const Offset(0, 4),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-    ],
-  ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -379,6 +385,7 @@ class _ShippingSectionState extends State<ShippingSection> {
                           _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '86261';
                           widget.pedido.shippingCost = 0.0;
                           widget.pedido.shippingCostController.text = '0.00';
+                          widget.pedido.isShippingCostManuallyEdited = false;
                           widget.pedido.storeFinal = _storeFinal;
                           widget.pedido.pickupStoreId = _pickupStoreId;
                         } else {
@@ -387,8 +394,7 @@ class _ShippingSectionState extends State<ShippingSection> {
                           _pickupStoreId = '';
                           widget.pedido.storeFinal = '';
                           widget.pedido.pickupStoreId = '';
-                          widget.pedido.shippingCost = 0.0;
-                          widget.pedido.shippingCostController.text = '0.00';
+                          widget.pedido.isShippingCostManuallyEdited = false;
                         }
                       });
                       widget.onShippingMethodUpdated(_shippingMethod);
@@ -453,6 +459,7 @@ class _ShippingSectionState extends State<ShippingSection> {
                       widget.pedido.pickupStoreId = _pickupStoreId;
                       widget.pedido.shippingCost = 0.0;
                       widget.pedido.shippingCostController.text = '0.00';
+                      widget.pedido.isShippingCostManuallyEdited = false;
                     });
                     widget.onStoreUpdated(_storeFinal, _pickupStoreId);
                     widget.onShippingCostUpdated(0.0);
@@ -465,6 +472,74 @@ class _ShippingSectionState extends State<ShippingSection> {
               ),
             ),
           ],
+          const SizedBox(height: 16),
+          if (_shippingMethod == 'delivery')
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Taxa de Entrega',
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 100,
+                    child: TextFormField(
+                      controller: widget.pedido.shippingCostController,
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        prefixText: 'R\$ ',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: primaryColor, width: 2),
+                        ),
+                        filled: true,
+                        fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
+                      onChanged: (value) {
+                        final cleanValue = value.replaceAll(RegExp(r'[^0-9.,]'), '').replaceAll(',', '.');
+                        final parsed = double.tryParse(cleanValue);
+                        if (parsed != null && parsed >= 0) {
+                          widget.pedido.shippingCost = parsed;
+                          widget.pedido.isShippingCostManuallyEdited = true;
+                          widget.onShippingCostUpdated(parsed);
+                          widget.savePersistedData?.call(widget.pedido);
+                        }
+                      },
+                      onFieldSubmitted: (value) {
+                        final cleanValue = value.replaceAll(RegExp(r'[^0-9.,]'), '').replaceAll(',', '.');
+                        final parsed = double.tryParse(cleanValue) ?? 0.0;
+                        widget.pedido.shippingCostController.text = parsed.toStringAsFixed(2);
+                        widget.pedido.shippingCost = parsed;
+                        widget.pedido.isShippingCostManuallyEdited = true;
+                        widget.onShippingCostUpdated(parsed);
+                        widget.savePersistedData?.call(widget.pedido);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 8),
         ],
       ),
     );

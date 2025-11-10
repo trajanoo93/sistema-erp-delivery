@@ -32,6 +32,7 @@ class PedidoState with ChangeNotifier {
   bool showCouponField = false;
   String schedulingDate = '';
   String schedulingTime = '';
+  bool isShippingCostManuallyEdited = false;
   bool isCustomerSectionExpanded = true;
   bool isAddressSectionExpanded = true;
   bool isProductsSectionExpanded = true;

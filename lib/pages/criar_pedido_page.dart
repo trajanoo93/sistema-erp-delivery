@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -146,95 +145,95 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
         .replaceAll(RegExp(r'\s+'), ' ');
   }
 
-String _paymentSlugFromLabel(String uiLabel) {
-  final n = _normalizeLabel(uiLabel);
-  final currentPedido = _pedidos[_currentTabIndex];
-  if (n.contains('pix')) return 'pagarme_custom_pix';
-  if (n.contains('cartao de credito on-line') ||
-      n.contains('cartao de credito online') ||
-      n == 'cartao de credito' ||
-      n.contains('stripe')) {
-    return currentPedido.paymentAccounts['stripe'] ?? 'stripe';
-  }
-  if (n.contains('dinheiro')) {
+  String _paymentSlugFromLabel(String uiLabel) {
+    final n = _normalizeLabel(uiLabel);
+    final currentPedido = _pedidos[_currentTabIndex];
+    if (n.contains('pix')) return 'pagarme_custom_pix';
+    if (n.contains('cartao de credito on-line') ||
+        n.contains('cartao de credito online') ||
+        n == 'cartao de credito' ||
+        n.contains('stripe')) {
+      return currentPedido.paymentAccounts['stripe'] ?? 'stripe';
+    }
+    if (n.contains('dinheiro')) {
+      return 'cod';
+    }
+    if (n.contains('cartao na entrega') ||
+        n.contains('cartao de debito ou credito') ||
+        n.contains('maquininha') ||
+        n.contains('pos')) {
+      return 'custom_729b8aa9fc227ff';
+    }
+    if (n.contains('vale alimentacao') || n == 'va') {
+      return 'custom_e876f567c151864';
+    }
     return 'cod';
   }
-  if (n.contains('cartao na entrega') ||
-      n.contains('cartao de debito ou credito') ||
-      n.contains('maquininha') ||
-      n.contains('pos')) {
-    return 'custom_729b8aa9fc227ff';
-  }
-  if (n.contains('vale alimentacao') || n == 'va') {
-    return 'custom_e876f567c151864';
-  }
-  return 'cod';
-}
 
   Future<void> logToFile(String message) async {
-  try {
-    final directory = await getApplicationDocumentsDirectory();
-    final file = File('${directory.path}/app_logs.txt');
-    await file.writeAsString('${DateTime.now()} - $message\n', mode: FileMode.append, encoding: utf8);
-  } catch (e) {
-    debugPrint('Falha ao escrever log: $e');
-  }
-}
-
- Timer? _saveDebounce;
-Future<void> _savePersistedData(PedidoState pedido) async {
-  _saveDebounce?.cancel();
-  _saveDebounce = Timer(const Duration(milliseconds: 2000), () async {
-    final prefs = await SharedPreferences.getInstance();
-    final index = _pedidos.indexOf(pedido);
-    if (index >= 0) {
-      await logToFile('Starting savePersistedData for index $index');
-      if (pedido.shippingMethod == 'pickup') {
-        pedido.shippingCost = 0.0;
-        pedido.shippingCostController.text = '0.00';
-        if (!['Central Distribuição (Sagrada Família)', 'Unidade Barreiro', 'Unidade Sion'].contains(pedido.storeFinal)) {
-          pedido.storeFinal = 'Central Distribuição (Sagrada Família)';
-          pedido.pickupStoreId = '86261';
-        }
-      }
-      await prefs.setString('phone_$index', pedido.phoneController.text);
-      await prefs.setString('name_$index', pedido.nameController.text);
-      await prefs.setString('email_$index', pedido.emailController.text);
-      await prefs.setString('cep_$index', pedido.cepController.text);
-      await prefs.setString('address_$index', pedido.addressController.text);
-      await prefs.setString('number_$index', pedido.numberController.text);
-      await prefs.setString('complement_$index', pedido.complementController.text);
-      await prefs.setString('neighborhood_$index', pedido.neighborhoodController.text);
-      await prefs.setString('city_$index', pedido.cityController.text);
-      await prefs.setString('notes_$index', pedido.notesController.text);
-      await prefs.setString('coupon_$index', pedido.couponController.text);
-      await prefs.setString('products_$index', jsonEncode(pedido.products));
-      await prefs.setString('shippingMethod_$index', pedido.shippingMethod);
-      await prefs.setString('paymentMethod_$index', pedido.selectedPaymentMethod);
-      await prefs.setString('availablePaymentMethods_$index', jsonEncode(pedido.availablePaymentMethods));
-      await prefs.setString('paymentAccounts_$index', jsonEncode(pedido.paymentAccounts));
-      await prefs.setDouble('shippingCost_$index', pedido.shippingCost);
-      await prefs.setString('storeFinal_$index', pedido.storeFinal);
-      await prefs.setString('pickupStoreId_$index', pedido.pickupStoreId);
-      await prefs.setBool('showNotesField_$index', pedido.showNotesField);
-      await prefs.setBool('showCouponField_$index', pedido.showCouponField);
-      await prefs.setString('schedulingDate_$index', pedido.schedulingDate);
-      await prefs.setString('schedulingTime_$index', pedido.schedulingTime);
-      await prefs.setBool('isCustomerSectionExpanded_$index', pedido.isCustomerSectionExpanded);
-      await prefs.setBool('isAddressSectionExpanded_$index', pedido.isAddressSectionExpanded);
-      await prefs.setBool('isProductsSectionExpanded_$index', pedido.isProductsSectionExpanded);
-      await prefs.setBool('isShippingSectionExpanded_$index', pedido.isShippingSectionExpanded);
-      await _savePedidos();
-      await logToFile(
-          'Saved persisted data for index $index: shippingMethod=${pedido.shippingMethod}, '
-          'storeFinal=${pedido.storeFinal}, pickupStoreId=${pedido.pickupStoreId}, '
-          'shippingCost=${pedido.shippingCost}, products=${jsonEncode(pedido.products)}');
-    } else {
-      await logToFile('Error: Invalid index $index for pedido in _savePersistedData');
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/app_logs.txt');
+      await file.writeAsString('${DateTime.now()} - $message\n', mode: FileMode.append, encoding: utf8);
+    } catch (e) {
+      debugPrint('Falha ao escrever log: $e');
     }
-  });
-}
+  }
 
+  Timer? _saveDebounce;
+
+  Future<void> _savePersistedData(PedidoState pedido) async {
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 2000), () async {
+      final prefs = await SharedPreferences.getInstance();
+      final index = _pedidos.indexOf(pedido);
+      if (index >= 0) {
+        await logToFile('Starting savePersistedData for index $index');
+        if (pedido.shippingMethod == 'pickup') {
+          pedido.shippingCost = 0.0;
+          pedido.shippingCostController.text = '0.00';
+          if (!['Central Distribuição (Sagrada Família)', 'Unidade Barreiro', 'Unidade Sion'].contains(pedido.storeFinal)) {
+            pedido.storeFinal = 'Central Distribuição (Sagrada Família)';
+            pedido.pickupStoreId = '86261';
+          }
+        }
+        await prefs.setString('phone_$index', pedido.phoneController.text);
+        await prefs.setString('name_$index', pedido.nameController.text);
+        await prefs.setString('email_$index', pedido.emailController.text);
+        await prefs.setString('cep_$index', pedido.cepController.text);
+        await prefs.setString('address_$index', pedido.addressController.text);
+        await prefs.setString('number_$index', pedido.numberController.text);
+        await prefs.setString('complement_$index', pedido.complementController.text);
+        await prefs.setString('neighborhood_$index', pedido.neighborhoodController.text);
+        await prefs.setString('city_$index', pedido.cityController.text);
+        await prefs.setString('notes_$index', pedido.notesController.text);
+        await prefs.setString('coupon_$index', pedido.couponController.text);
+        await prefs.setString('products_$index', jsonEncode(pedido.products));
+        await prefs.setString('shippingMethod_$index', pedido.shippingMethod);
+        await prefs.setString('paymentMethod_$index', pedido.selectedPaymentMethod);
+        await prefs.setString('availablePaymentMethods_$index', jsonEncode(pedido.availablePaymentMethods));
+        await prefs.setString('paymentAccounts_$index', jsonEncode(pedido.paymentAccounts));
+        await prefs.setDouble('shippingCost_$index', pedido.shippingCost);
+        await prefs.setString('storeFinal_$index', pedido.storeFinal);
+        await prefs.setString('pickupStoreId_$index', pedido.pickupStoreId);
+        await prefs.setBool('showNotesField_$index', pedido.showNotesField);
+        await prefs.setBool('showCouponField_$index', pedido.showCouponField);
+        await prefs.setString('schedulingDate_$index', pedido.schedulingDate);
+        await prefs.setString('schedulingTime_$index', pedido.schedulingTime);
+        await prefs.setBool('isCustomerSectionExpanded_$index', pedido.isCustomerSectionExpanded);
+        await prefs.setBool('isAddressSectionExpanded_$index', pedido.isAddressSectionExpanded);
+        await prefs.setBool('isProductsSectionExpanded_$index', pedido.isProductsSectionExpanded);
+        await prefs.setBool('isShippingSectionExpanded_$index', pedido.isShippingSectionExpanded);
+        await _savePedidos();
+        await logToFile(
+            'Saved persisted data for index $index: shippingMethod=${pedido.shippingMethod}, '
+            'storeFinal=${pedido.storeFinal}, pickupStoreId=${pedido.pickupStoreId}, '
+            'shippingCost=${pedido.shippingCost}, products=${jsonEncode(pedido.products)}');
+      } else {
+        await logToFile('Error: Invalid index $index for pedido in _savePersistedData');
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -246,40 +245,41 @@ Future<void> _savePersistedData(PedidoState pedido) async {
   }
 
   Future<void> _initializePedidos() async {
-  setState(() => _isLoading = true);
-  await logToFile('Iniciando _initializePedidos');
-  try {
-    await _restorePedidos();
-    if (_pedidos.isNotEmpty && _pedidos[0].cepController.text.replaceAll(RegExp(r'\D'), '').length == 8) {
-      await logToFile('CEP válido encontrado, chamando _checkStoreByCep');
-      await _checkStoreByCep();
-    } else {
-      await logToFile('Nenhum CEP válido encontrado, pulando _checkStoreByCep');
-    }
-  } catch (e) {
-    await logToFile('Erro em _initializePedidos: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Erro ao inicializar pedidos: $e'),
-        duration: const Duration(seconds: 5),
-        backgroundColor: Colors.red,
-      ),
-    );
-  } finally {
-    if (mounted) {
-      setState(() {
-        _isInitialized = true;
-        _isLoading = false;
-        _tabController = TabController(length: _pedidos.length, vsync: this);
-        _tabController.addListener(_handleTabSelection);
-      });
-      await logToFile('Finalizado _initializePedidos: _isInitialized=true, _isLoading=false');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() {});
-      });
+    setState(() => _isLoading = true);
+    await logToFile('Iniciando _initializePedidos');
+    try {
+      await _restorePedidos();
+      if (_pedidos.isNotEmpty && _pedidos[0].cepController.text.replaceAll(RegExp(r'\D'), '').length == 8) {
+        await logToFile('CEP válido encontrado, chamando _checkStoreByCep');
+        await _checkStoreByCep();
+      } else {
+        await logToFile('Nenhum CEP válido encontrado, pulando _checkStoreByCep');
+      }
+    } catch (e) {
+      await logToFile('Erro em _initializePedidos: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao inicializar pedidos: $e'),
+          duration: const Duration(seconds: 5),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+          _isLoading = false;
+          _tabController = TabController(length: _pedidos.length, vsync: this);
+          _tabController.addListener(_handleTabSelection);
+        });
+        await logToFile('Finalizado _initializePedidos: _isInitialized=true, _isLoading=false');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() {});
+        });
+      }
     }
   }
-}
+
   @override
   void dispose() {
     _savePedidos();
@@ -294,16 +294,15 @@ Future<void> _savePersistedData(PedidoState pedido) async {
   }
 
   void _handleTabSelection() {
-  if (_tabController.index != _currentTabIndex && mounted) {
-    // Salva o estado da aba atual antes de trocar
-    if (_currentTabIndex < _pedidos.length) {
-      _savePersistedData(_pedidos[_currentTabIndex]);
+    if (_tabController.index != _currentTabIndex && mounted) {
+      if (_currentTabIndex < _pedidos.length) {
+        _savePersistedData(_pedidos[_currentTabIndex]);
+      }
+      setState(() {
+        _currentTabIndex = _tabController.index;
+      });
     }
-    setState(() {
-      _currentTabIndex = _tabController.index;
-    });
   }
-}
 
   void _updateTabs() {
     if (mounted) {
@@ -311,92 +310,87 @@ Future<void> _savePersistedData(PedidoState pedido) async {
     }
   }
 
+  Future<void> _restorePedidos() async {
+    await logToFile('Iniciando _restorePedidos');
+    final prefs = await SharedPreferences.getInstance();
+    final pedidosJson = prefs.getStringList('pedidos') ?? ['{}'];
+    await logToFile('Pedidos encontrados em SharedPreferences: ${pedidosJson.length}');
 
-Future<void> _restorePedidos() async {
-  await logToFile('Iniciando _restorePedidos');
-  final prefs = await SharedPreferences.getInstance();
-  final pedidosJson = prefs.getStringList('pedidos') ?? ['{}'];
-  await logToFile('Pedidos encontrados em SharedPreferences: ${pedidosJson.length}');
-  
-  for (var json in pedidosJson) {
-    try {
-      final pedidoData = jsonDecode(json) as Map<String, dynamic>;
-      final pedido = PedidoState.fromJson(pedidoData);
+    for (var json in pedidosJson) {
+      try {
+        final pedidoData = jsonDecode(json) as Map<String, dynamic>;
+        final pedido = PedidoState.fromJson(pedidoData);
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final pedidoWithCallback = PedidoState(onCouponValidated: _onCouponValidated);
+        pedidoWithCallback.phoneController.text = pedido.phoneController.text;
+        pedidoWithCallback.nameController.text = pedido.nameController.text;
+        pedidoWithCallback.emailController.text = pedido.emailController.text;
+        pedidoWithCallback.cepController.text = pedido.cepController.text;
+        pedidoWithCallback.addressController.text = pedido.addressController.text;
+        pedidoWithCallback.numberController.text = pedido.numberController.text;
+        pedidoWithCallback.complementController.text = pedido.complementController.text;
+        pedidoWithCallback.neighborhoodController.text = pedido.neighborhoodController.text;
+        pedidoWithCallback.cityController.text = pedido.cityController.text;
+        pedidoWithCallback.notesController.text = pedido.notesController.text;
+        pedidoWithCallback.couponController.text = pedido.couponController.text;
+        pedidoWithCallback.products = List<Map<String, dynamic>>.from(pedidoData['products'] ?? []);
+        pedidoWithCallback.shippingMethod = pedidoData['shippingMethod']?.toString() ?? 'delivery';
+        pedidoWithCallback.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
+        pedidoWithCallback.shippingCost = (pedidoData['shippingCost'] as num?)?.toDouble() ?? 0.0;
+        pedidoWithCallback.storeFinal = pedidoData['storeFinal']?.toString() ?? '';
+        pedidoWithCallback.pickupStoreId = pedidoData['pickupStoreId']?.toString() ?? '';
+        pedidoWithCallback.selectedPaymentMethod = _validPaymentMethods.contains(pedidoData['selectedPaymentMethod'])
+            ? pedidoData['selectedPaymentMethod']?.toString() ?? ''
+            : '';
+        pedidoWithCallback.availablePaymentMethods = (pedidoData['availablePaymentMethods'] as List<dynamic>?)
+            ?.map((m) => Map<String, dynamic>.from(m as Map))
+            .toList() ?? [];
+        pedidoWithCallback.paymentAccounts = (pedidoData['paymentAccounts'] as Map<dynamic, dynamic>?)
+            ?.map((k, v) => MapEntry(k.toString(), v)) ?? {'stripe': 'stripe', 'pagarme': 'central'};
+        pedidoWithCallback.showNotesField = pedidoData['showNotesField'] as bool? ?? false;
+        pedidoWithCallback.showCouponField = pedidoData['showCouponField'] as bool? ?? false;
+        pedidoWithCallback.schedulingDate = normalizeYmd(pedidoData['schedulingDate']?.toString() ?? '');
+        final isSunday = DateTime.now().weekday == DateTime.sunday;
+        final defaultTimeSlot = pedidoWithCallback.shippingMethod == 'pickup' && isSunday ? '09:00 - 12:00' : '14:00 - 17:00';
+        pedidoWithCallback.schedulingTime = ensureTimeRange(pedidoData['schedulingTime']?.toString() ?? defaultTimeSlot);
+        pedidoWithCallback.isCustomerSectionExpanded = pedidoData['isCustomerSectionExpanded'] as bool? ?? true;
+        pedidoWithCallback.isAddressSectionExpanded = pedidoData['isAddressSectionExpanded'] as bool? ?? true;
+        pedidoWithCallback.isProductsSectionExpanded = pedidoData['isProductsSectionExpanded'] as bool? ?? true;
+        pedidoWithCallback.isShippingSectionExpanded = pedidoData['isShippingSectionExpanded'] as bool? ?? true;
+        pedidoWithCallback.paymentInstructions = pedidoData['paymentInstructions']?.toString();
+        pedidoWithCallback.couponErrorMessage = pedidoData['couponErrorMessage']?.toString();
+        pedidoWithCallback.discountAmount = (pedidoData['discountAmount'] as num?)?.toDouble() ?? 0.0;
+        pedidoWithCallback.isCouponValid = pedidoData['isCouponValid'] as bool? ?? false;
+        pedidoWithCallback.storeIndication = pedidoData['storeIndication']?.toString();
+        pedidoWithCallback.isFetchingStore = pedidoData['isFetchingStore'] as bool? ?? false;
+        pedidoWithCallback.lastPhoneNumber = pedidoData['lastPhoneNumber']?.toString();
+        pedidoWithCallback.lastCep = pedidoData['lastCep']?.toString() ?? '';
+        pedidoWithCallback.nameController.addListener(_updateTabs);
+        _pedidos.add(pedidoWithCallback);
+        await logToFile('Restaurado pedido: index=${_pedidos.length - 1}, nome=${pedidoWithCallback.nameController.text}, availablePaymentMethods=${jsonEncode(pedidoWithCallback.availablePaymentMethods)}');
+      } catch (e, stackTrace) {
+        await logToFile('Erro ao restaurar pedido: $e, StackTrace: $stackTrace');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao restaurar pedido: $e'),
+            duration: const Duration(seconds: 5),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+    if (_pedidos.isEmpty) {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final pedidoWithCallback = PedidoState(onCouponValidated: _onCouponValidated);
-
-      // Copie os dados manualmente com casts seguros
-      pedidoWithCallback.phoneController.text = pedido.phoneController.text;
-      pedidoWithCallback.nameController.text = pedido.nameController.text;
-      pedidoWithCallback.emailController.text = pedido.emailController.text;
-      pedidoWithCallback.cepController.text = pedido.cepController.text;
-      pedidoWithCallback.addressController.text = pedido.addressController.text;
-      pedidoWithCallback.numberController.text = pedido.numberController.text;
-      pedidoWithCallback.complementController.text = pedido.complementController.text;
-      pedidoWithCallback.neighborhoodController.text = pedido.neighborhoodController.text;
-      pedidoWithCallback.cityController.text = pedido.cityController.text;
-      pedidoWithCallback.notesController.text = pedido.notesController.text;
-      pedidoWithCallback.couponController.text = pedido.couponController.text;
-      pedidoWithCallback.products = List<Map<String, dynamic>>.from(pedidoData['products'] ?? []);
-      pedidoWithCallback.shippingMethod = pedidoData['shippingMethod']?.toString() ?? 'delivery';
-      pedidoWithCallback.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
-      pedidoWithCallback.shippingCost = (pedidoData['shippingCost'] as num?)?.toDouble() ?? 0.0;
-      pedidoWithCallback.storeFinal = pedidoData['storeFinal']?.toString() ?? '';
-      pedidoWithCallback.pickupStoreId = pedidoData['pickupStoreId']?.toString() ?? '';
-      pedidoWithCallback.selectedPaymentMethod = _validPaymentMethods.contains(pedidoData['selectedPaymentMethod'])
-          ? pedidoData['selectedPaymentMethod']?.toString() ?? ''
-          : '';
-      pedidoWithCallback.availablePaymentMethods = (pedidoData['availablePaymentMethods'] as List<dynamic>?)
-          ?.map((m) => Map<String, dynamic>.from(m as Map))
-          .toList() ?? [];
-      pedidoWithCallback.paymentAccounts = (pedidoData['paymentAccounts'] as Map<dynamic, dynamic>?)
-          ?.map((k, v) => MapEntry(k.toString(), v)) ?? {'stripe': 'stripe', 'pagarme': 'central'};
-      pedidoWithCallback.showNotesField = pedidoData['showNotesField'] as bool? ?? false;
-      pedidoWithCallback.showCouponField = pedidoData['showCouponField'] as bool? ?? false;
-      pedidoWithCallback.schedulingDate = normalizeYmd(pedidoData['schedulingDate']?.toString() ?? '');
-      final isSunday = DateTime.now().weekday == DateTime.sunday;
-      final defaultTimeSlot = pedidoWithCallback.shippingMethod == 'pickup' && isSunday ? '09:00 - 12:00' : '14:00 - 17:00';
-      pedidoWithCallback.schedulingTime = ensureTimeRange(pedidoData['schedulingTime']?.toString() ?? defaultTimeSlot);
-      pedidoWithCallback.isCustomerSectionExpanded = pedidoData['isCustomerSectionExpanded'] as bool? ?? true;
-      pedidoWithCallback.isAddressSectionExpanded = pedidoData['isAddressSectionExpanded'] as bool? ?? true;
-      pedidoWithCallback.isProductsSectionExpanded = pedidoData['isProductsSectionExpanded'] as bool? ?? true;
-      pedidoWithCallback.isShippingSectionExpanded = pedidoData['isShippingSectionExpanded'] as bool? ?? true;
-      pedidoWithCallback.paymentInstructions = pedidoData['paymentInstructions']?.toString();
-      pedidoWithCallback.couponErrorMessage = pedidoData['couponErrorMessage']?.toString();
-      pedidoWithCallback.discountAmount = (pedidoData['discountAmount'] as num?)?.toDouble() ?? 0.0;
-      pedidoWithCallback.isCouponValid = pedidoData['isCouponValid'] as bool? ?? false;
-      pedidoWithCallback.storeIndication = pedidoData['storeIndication']?.toString();
-      pedidoWithCallback.isFetchingStore = pedidoData['isFetchingStore'] as bool? ?? false;
-      pedidoWithCallback.lastPhoneNumber = pedidoData['lastPhoneNumber']?.toString();
-      pedidoWithCallback.lastCep = pedidoData['lastCep']?.toString() ?? '';
-
-      pedidoWithCallback.nameController.addListener(_updateTabs);
-      _pedidos.add(pedidoWithCallback);
-      await logToFile('Restaurado pedido: index=${_pedidos.length - 1}, nome=${pedidoWithCallback.nameController.text}, availablePaymentMethods=${jsonEncode(pedidoWithCallback.availablePaymentMethods)}');
-    } catch (e, stackTrace) {
-      await logToFile('Erro ao restaurar pedido: $e, StackTrace: $stackTrace');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao restaurar pedido: $e'),
-          duration: const Duration(seconds: 5),
-          backgroundColor: Colors.red,
-        ),
-      );
+      final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
+      newPedido.nameController.addListener(_updateTabs);
+      newPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      newPedido.schedulingTime = '09:00 - 12:00';
+      newPedido.shippingMethod = 'delivery';
+      newPedido.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
+      _pedidos.add(newPedido);
+      await logToFile('Criado novo pedido padrão: selectedVendedor=${newPedido.selectedVendedor}');
     }
   }
-
-  if (_pedidos.isEmpty) {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
-    newPedido.nameController.addListener(_updateTabs);
-    newPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    newPedido.schedulingTime = '09:00 - 12:00';
-    newPedido.shippingMethod = 'delivery';
-    newPedido.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
-    _pedidos.add(newPedido);
-    await logToFile('Criado novo pedido padrão: selectedVendedor=${newPedido.selectedVendedor}');
-  }
-}
 
   Future<void> _savePedidos() async {
     final prefs = await SharedPreferences.getInstance();
@@ -405,117 +399,116 @@ Future<void> _restorePedidos() async {
   }
 
   Future<void> _loadPersistedData(PedidoState pedido) async {
-  final authProvider = Provider.of<AuthProvider>(context, listen: false);
-  final prefs = await SharedPreferences.getInstance();
-  final index = _pedidos.indexOf(pedido);
-  if (index >= 0 && prefs.getString('phone_$index') == null) {
-    pedido.phoneController.text = '';
-    pedido.nameController.text = '';
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final prefs = await SharedPreferences.getInstance();
+    final index = _pedidos.indexOf(pedido);
+    if (index >= 0 && prefs.getString('phone_$index') == null) {
+      pedido.phoneController.text = '';
+      pedido.nameController.text = '';
+      pedido.emailController.text = 'orders@aogosto.com.br';
+      pedido.cepController.text = '';
+      pedido.addressController.text = '';
+      pedido.numberController.text = '';
+      pedido.complementController.text = '';
+      pedido.neighborhoodController.text = '';
+      pedido.cityController.text = '';
+      pedido.notesController.text = '';
+      pedido.couponController.text = '';
+      pedido.products = [];
+      pedido.shippingMethod = 'delivery';
+      pedido.selectedPaymentMethod = '';
+      pedido.availablePaymentMethods = [];
+      pedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+      pedido.shippingCost = 0.0;
+      pedido.shippingCostController.text = '0.00';
+      pedido.storeFinal = '';
+      pedido.pickupStoreId = '';
+      pedido.showNotesField = false;
+      pedido.showCouponField = false;
+      pedido.schedulingDate = '';
+      pedido.schedulingTime = '';
+      pedido.isCustomerSectionExpanded = true;
+      pedido.isAddressSectionExpanded = true;
+      pedido.isProductsSectionExpanded = true;
+      pedido.isShippingSectionExpanded = true;
+      pedido.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
+      await logToFile('Initialized new pedido for index $index with default values, selectedVendedor=${pedido.selectedVendedor}');
+      return;
+    }
+    pedido.phoneController.text = prefs.getString('phone_$index') ?? '';
+    pedido.nameController.text = prefs.getString('name_$index') ?? '';
     pedido.emailController.text = 'orders@aogosto.com.br';
-    pedido.cepController.text = '';
-    pedido.addressController.text = '';
-    pedido.numberController.text = '';
-    pedido.complementController.text = '';
-    pedido.neighborhoodController.text = '';
-    pedido.cityController.text = '';
-    pedido.notesController.text = '';
-    pedido.couponController.text = '';
-    pedido.products = [];
-    pedido.shippingMethod = 'delivery';
-    pedido.selectedPaymentMethod = '';
-    pedido.availablePaymentMethods = [];
-    pedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
-    pedido.shippingCost = 0.0;
-    pedido.shippingCostController.text = '0.00';
-    pedido.storeFinal = '';
-    pedido.pickupStoreId = '';
-    pedido.showNotesField = false;
-    pedido.showCouponField = false;
-    pedido.schedulingDate = '';
-    pedido.schedulingTime = '';
-    pedido.isCustomerSectionExpanded = true;
-    pedido.isAddressSectionExpanded = true;
-    pedido.isProductsSectionExpanded = true;
-    pedido.isShippingSectionExpanded = true;
+    pedido.cepController.text = prefs.getString('cep_$index') ?? '';
+    pedido.addressController.text = prefs.getString('address_$index') ?? '';
+    pedido.numberController.text = prefs.getString('number_$index') ?? '';
+    pedido.complementController.text = prefs.getString('complement_$index') ?? '';
+    pedido.neighborhoodController.text = prefs.getString('neighborhood_$index') ?? '';
+    pedido.cityController.text = prefs.getString('city_$index') ?? '';
+    pedido.notesController.text = prefs.getString('notes_$index') ?? '';
+    pedido.couponController.text = prefs.getString('coupon_$index') ?? '';
+    pedido.products = (jsonDecode(prefs.getString('products_$index') ?? '[]') as List)
+        .cast<Map<String, dynamic>>();
+    pedido.shippingMethod = prefs.getString('shippingMethod_$index') ?? 'delivery';
+    String? savedPaymentMethod = prefs.getString('paymentMethod_$index');
+    pedido.selectedPaymentMethod = _validPaymentMethods.contains(savedPaymentMethod)
+        ? savedPaymentMethod ?? ''
+        : '';
+    pedido.availablePaymentMethods = List<Map<String, String>>.from(
+        jsonDecode(prefs.getString('availablePaymentMethods_$index') ?? '[]'));
+    pedido.paymentAccounts = Map<String, String>.from(
+        jsonDecode(prefs.getString('paymentAccounts_$index') ?? '{"stripe":"stripe","pagarme":"central"}'));
+    pedido.shippingCost = pedido.shippingMethod == 'pickup'
+        ? 0.0
+        : (prefs.getDouble('shippingCost_$index') ?? 0.0);
+    pedido.shippingCostController.text = pedido.shippingCost.toStringAsFixed(2);
+    pedido.storeFinal = pedido.shippingMethod == 'pickup'
+        ? (prefs.getString('storeFinal_$index') ?? 'Central Distribuição (Sagrada Família)')
+        : (prefs.getString('storeFinal_$index') ?? '');
+    pedido.pickupStoreId = pedido.shippingMethod == 'pickup'
+        ? (prefs.getString('pickupStoreId_$index') ?? '86261')
+        : (prefs.getString('pickupStoreId_$index') ?? '');
+    pedido.showNotesField = prefs.getBool('showNotesField_$index') ?? false;
+    pedido.showCouponField = prefs.getBool('showCouponField_$index') ?? false;
+    pedido.schedulingDate = prefs.getString('schedulingDate_$index') ?? DateFormat('yyyy-MM-dd').format(DateTime.now());
+    pedido.schedulingTime = ensureTimeRange(prefs.getString('schedulingTime_$index') ?? '09:00 - 12:00');
+    pedido.isCustomerSectionExpanded = prefs.getBool('isCustomerSectionExpanded_$index') ?? true;
+    pedido.isAddressSectionExpanded = prefs.getBool('isAddressSectionExpanded_$index') ?? true;
+    pedido.isProductsSectionExpanded = prefs.getBool('isProductsSectionExpanded_$index') ?? true;
+    pedido.isShippingSectionExpanded = prefs.getBool('isShippingSectionExpanded_$index') ?? true;
     pedido.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
-    await logToFile('Initialized new pedido for index $index with default values, selectedVendedor=${pedido.selectedVendedor}');
-    return;
+    await logToFile(
+        'Loaded persisted data for index $index: shippingMethod=${pedido.shippingMethod}, '
+        'storeFinal=${pedido.storeFinal}, pickupStoreId=${pedido.pickupStoreId}, '
+        'shippingCost=${pedido.shippingCost}, selectedVendedor=${pedido.selectedVendedor}');
   }
-  pedido.phoneController.text = prefs.getString('phone_$index') ?? '';
-  pedido.nameController.text = prefs.getString('name_$index') ?? '';
-  pedido.emailController.text = 'orders@aogosto.com.br';
-  pedido.cepController.text = prefs.getString('cep_$index') ?? '';
-  pedido.addressController.text = prefs.getString('address_$index') ?? '';
-  pedido.numberController.text = prefs.getString('number_$index') ?? '';
-  pedido.complementController.text = prefs.getString('complement_$index') ?? '';
-  pedido.neighborhoodController.text = prefs.getString('neighborhood_$index') ?? '';
-  pedido.cityController.text = prefs.getString('city_$index') ?? '';
-  pedido.notesController.text = prefs.getString('notes_$index') ?? '';
-  pedido.couponController.text = prefs.getString('coupon_$index') ?? '';
-  pedido.products = (jsonDecode(prefs.getString('products_$index') ?? '[]') as List)
-      .cast<Map<String, dynamic>>();
-  pedido.shippingMethod = prefs.getString('shippingMethod_$index') ?? 'delivery';
-  String? savedPaymentMethod = prefs.getString('paymentMethod_$index');
-  pedido.selectedPaymentMethod = _validPaymentMethods.contains(savedPaymentMethod)
-      ? savedPaymentMethod ?? ''
-      : '';
-  pedido.availablePaymentMethods = List<Map<String, String>>.from(
-      jsonDecode(prefs.getString('availablePaymentMethods_$index') ?? '[]'));
-  pedido.paymentAccounts = Map<String, String>.from(
-      jsonDecode(prefs.getString('paymentAccounts_$index') ?? '{"stripe":"stripe","pagarme":"central"}'));
-  pedido.shippingCost = pedido.shippingMethod == 'pickup'
-      ? 0.0
-      : (prefs.getDouble('shippingCost_$index') ?? 0.0);
-  pedido.shippingCostController.text = pedido.shippingCost.toStringAsFixed(2);
-  pedido.storeFinal = pedido.shippingMethod == 'pickup'
-      ? (prefs.getString('storeFinal_$index') ?? 'Central Distribuição (Sagrada Família)')
-      : (prefs.getString('storeFinal_$index') ?? '');
-  pedido.pickupStoreId = pedido.shippingMethod == 'pickup'
-      ? (prefs.getString('pickupStoreId_$index') ?? '86261')
-      : (prefs.getString('pickupStoreId_$index') ?? '');
-  pedido.showNotesField = prefs.getBool('showNotesField_$index') ?? false;
-  pedido.showCouponField = prefs.getBool('showCouponField_$index') ?? false;
-  pedido.schedulingDate = prefs.getString('schedulingDate_$index') ?? DateFormat('yyyy-MM-dd').format(DateTime.now());
-  pedido.schedulingTime = ensureTimeRange(prefs.getString('schedulingTime_$index') ?? '09:00 - 12:00');
-  pedido.isCustomerSectionExpanded = prefs.getBool('isCustomerSectionExpanded_$index') ?? true;
-  pedido.isAddressSectionExpanded = prefs.getBool('isAddressSectionExpanded_$index') ?? true;
-  pedido.isProductsSectionExpanded = prefs.getBool('isProductsSectionExpanded_$index') ?? true;
-  pedido.isShippingSectionExpanded = prefs.getBool('isShippingSectionExpanded_$index') ?? true;
-  pedido.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
-  await logToFile(
-      'Loaded persisted data for index $index: shippingMethod=${pedido.shippingMethod}, '
-      'storeFinal=${pedido.storeFinal}, pickupStoreId=${pedido.pickupStoreId}, '
-      'shippingCost=${pedido.shippingCost}, selectedVendedor=${pedido.selectedVendedor}');
-}
 
   Future<void> _addNewPedido() async {
     if (_isAddingTab) return;
     setState(() {
       _isAddingTab = true;
     });
-  try {
-  final authProvider = Provider.of<AuthProvider>(context, listen: false);
-final billingCompany = authProvider.userId != null ? authProvider.userId.toString() : '7';
-  final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
-  newPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-  newPedido.schedulingTime = '09:00 - 12:00';
-  newPedido.shippingMethod = 'delivery';
-  newPedido.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
-  newPedido.nameController.addListener(_updateTabs);
-  await _loadPersistedData(newPedido);
-  await logToFile('Novo pedido criado: shippingMethod=${newPedido.shippingMethod}, selectedVendedor=${newPedido.selectedVendedor}');
-  setState(() {
-    _pedidos.add(newPedido);
-    _currentTabIndex = _pedidos.length - 1;
-    _tabController.dispose();
-    _tabController = TabController(
-      length: _pedidos.length,
-      vsync: this,
-      initialIndex: _currentTabIndex,
-    );
-    _tabController.addListener(_handleTabSelection);
-  });
-} catch (e) {
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
+      newPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      newPedido.schedulingTime = '09:00 - 12:00';
+      newPedido.shippingMethod = 'delivery';
+      newPedido.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
+      newPedido.nameController.addListener(_updateTabs);
+      await _loadPersistedData(newPedido);
+      await logToFile('Novo pedido criado: shippingMethod=${newPedido.shippingMethod}, selectedVendedor=${newPedido.selectedVendedor}');
+      setState(() {
+        _pedidos.add(newPedido);
+        _currentTabIndex = _pedidos.length - 1;
+        _tabController.dispose();
+        _tabController = TabController(
+          length: _pedidos.length,
+          vsync: this,
+          initialIndex: _currentTabIndex,
+        );
+        _tabController.addListener(_handleTabSelection);
+      });
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erro ao adicionar novo pedido: $e')),
       );
@@ -549,480 +542,476 @@ final billingCompany = authProvider.userId != null ? authProvider.userId.toStrin
   }
 
   Future<void> _fetchCustomer() async {
-  if (_debounce?.isActive ?? false) return; // Evita chamadas repetidas
-  _debounce = Timer(const Duration(milliseconds: 500), () async {
-    await logToFile('Iniciando _fetchCustomer');
-    final currentPedido = _pedidos[_currentTabIndex];
-    final phone = currentPedido.phoneController.text.replaceAll(RegExp(r'\D'), '').trim();
-    await logToFile('Phone: ${currentPedido.phoneController.text}, Cleaned: $phone, isPhoneValid: ${phone.length == 11}');
-    if (phone.length != 11) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, insira um número de telefone válido (11 dígitos com DDD)')),
-      );
-      return;
-    }
-    setState(() {
-      _isLoading = true;
+    if (_debounce?.isActive ?? false) return;
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
+      await logToFile('Iniciando _fetchCustomer');
+      final currentPedido = _pedidos[_currentTabIndex];
+      final phone = currentPedido.phoneController.text.replaceAll(RegExp(r'\D'), '').trim();
+      await logToFile('Phone: ${currentPedido.phoneController.text}, Cleaned: $phone, isPhoneValid: ${phone.length == 11}');
+      if (phone.length != 11) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Por favor, insira um número de telefone válido (11 dígitos com DDD)')),
+        );
+        return;
+      }
+      setState(() {
+        _isLoading = true;
+      });
+      try {
+        final service = CriarPedidoService();
+        final customer = await service.fetchCustomerByPhone(phone);
+        if (customer != null && mounted) {
+          currentPedido.nameController.text = customer['first_name'] + ' ' + (customer['last_name'] ?? '');
+          currentPedido.cepController.text = customer['billing']['postcode'] ?? '';
+          currentPedido.addressController.text = customer['billing']['address_1'] ?? '';
+          currentPedido.numberController.text = customer['billing']['number'] ?? '';
+          currentPedido.complementController.text = customer['billing']['address_2'] ?? '';
+          currentPedido.neighborhoodController.text = customer['billing']['neighborhood'] ?? '';
+          currentPedido.cityController.text = customer['billing']['city'] ?? '';
+          await _savePersistedData(currentPedido);
+          final cleanCep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '');
+          if (cleanCep.length == 8 && cleanCep != currentPedido.lastCep) {
+            currentPedido.lastCep = cleanCep;
+            await _checkStoreByCep();
+          }
+          if (mounted) {
+            setState(() {});
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cliente não encontrado. Preencha os dados manualmente.')),
+          );
+        }
+      } catch (error) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao buscar cliente: $error')),
+        );
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      }
     });
-    try {
-  final service = CriarPedidoService();
-  final customer = await service.fetchCustomerByPhone(phone);
-  if (customer != null && mounted) {
-    currentPedido.nameController.text = customer['first_name'] + ' ' + (customer['last_name'] ?? '');
-    currentPedido.cepController.text = customer['billing']['postcode'] ?? '';
-    currentPedido.addressController.text = customer['billing']['address_1'] ?? '';
-    currentPedido.numberController.text = customer['billing']['number'] ?? '';
-    currentPedido.complementController.text = customer['billing']['address_2'] ?? '';
-    currentPedido.neighborhoodController.text = customer['billing']['neighborhood'] ?? '';
-    currentPedido.cityController.text = customer['billing']['city'] ?? '';
-    await _savePersistedData(currentPedido);
-    final cleanCep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '');
-    if (cleanCep.length == 8 && cleanCep != currentPedido.lastCep) {
-      currentPedido.lastCep = cleanCep;
-      await _checkStoreByCep();
-    }
-    if (mounted) {
-      setState(() {});
-    }
-  } else {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Cliente não encontrado. Preencha os dados manualmente.')),
-    );
   }
-} catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao buscar cliente: $error')),
-      );
+
+  Future<void> _checkStoreByCep() async {
+    final currentPedido = _pedidos[_currentTabIndex];
+    final cep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
+    await logToFile('Iniciando _checkStoreByCep: cep=$cep, shippingMethod=${currentPedido.shippingMethod}');
+    setState(() => _isLoading = true);
+    try {
+      if (cep.length != 8 && currentPedido.shippingMethod != 'pickup') {
+        await logToFile('CEP inválido ou ausente, resetting store and cost');
+        setState(() {
+          currentPedido.shippingCost = 0.0;
+          currentPedido.shippingCostController.text = '0.00';
+          currentPedido.storeFinal = '';
+          currentPedido.pickupStoreId = '';
+          currentPedido.availablePaymentMethods = [];
+          currentPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+        });
+        await _savePersistedData(currentPedido);
+        return;
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      final cacheKey = 'cep_data_$cep';
+      final cachedData = prefs.getString(cacheKey);
+      if (cachedData != null) {
+        final data = jsonDecode(cachedData);
+        setState(() {
+          currentPedido.storeFinal = data['store_final']?.toString() ?? 'Central Distribuição (Sagrada Família)';
+          currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(currentPedido.storeFinal);
+          currentPedido.shippingCost = double.tryParse(data['shipping_cost']?.toString() ?? '0.0') ?? 0.0;
+          currentPedido.shippingCostController.text = currentPedido.shippingCost.toStringAsFixed(2);
+          final rawPaymentMethods = data['payment_methods'] as List<dynamic>? ?? [];
+          currentPedido.availablePaymentMethods = rawPaymentMethods.map((m) {
+            final map = m as Map;
+            return {
+              'id': map['id']?.toString() ?? '',
+              'title': map['title']?.toString() ?? '',
+            };
+          }).toList();
+          final paymentAccounts = data['payment_accounts'] as Map? ?? {'stripe': 'stripe', 'pagarme': 'central'};
+          currentPedido.paymentAccounts = paymentAccounts.map((key, value) => MapEntry(key.toString(), value.toString()));
+          if (currentPedido.selectedPaymentMethod.isNotEmpty &&
+              !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
+            currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
+                ? currentPedido.availablePaymentMethods.first['title'] ?? ''
+                : '';
+          }
+        });
+        await logToFile('Loaded CEP data from cache: storeFinal=${currentPedido.storeFinal}, shippingCost=${currentPedido.shippingCost}');
+        await _savePersistedData(currentPedido);
+        return;
+      }
+
+      final normalizedDate = normalizeYmd(currentPedido.schedulingDate);
+      final requestBody = {
+        'cep': cep,
+        'shipping_method': currentPedido.shippingMethod,
+        'pickup_store': currentPedido.shippingMethod == 'pickup' ? currentPedido.storeFinal : '',
+        'delivery_date': currentPedido.shippingMethod == 'delivery' ? normalizedDate : '',
+        'pickup_date': currentPedido.shippingMethod == 'pickup' ? normalizedDate : '',
+      };
+      await logToFile('Sending store-decision request: ${jsonEncode(requestBody)}');
+      final storeResponse = await http.post(
+        Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(requestBody),
+      ).timeout(const Duration(seconds: 10), onTimeout: () {
+        throw Exception('Timeout ao buscar opções de entrega');
+      });
+      await logToFile('Store decision response: status=${storeResponse.statusCode}, body=${storeResponse.body}');
+      double shippingCost = 0.0;
+      if (storeResponse.statusCode == 200) {
+        final data = jsonDecode(storeResponse.body);
+        await logToFile('Parsed JSON: ${jsonEncode(data)}');
+        final newStoreFinal = data['effective_store_final']?.toString() ?? data['store_final']?.toString() ?? 'Central Distribuição (Sagrada Família)';
+        setState(() {
+          currentPedido.storeFinal = newStoreFinal;
+          currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(newStoreFinal);
+          final rawPaymentMethods = List<Map<String, dynamic>>.from(data['payment_methods'] ?? []);
+          currentPedido.availablePaymentMethods = rawPaymentMethods.map((m) => ({
+            'id': m['id']?.toString() ?? '',
+            'title': m['title']?.toString() ?? ''
+          })).toList();
+          final paymentAccounts = Map<String, dynamic>.from(data['payment_accounts'] ?? {'stripe': 'stripe', 'pagarme': 'central'});
+          currentPedido.paymentAccounts = paymentAccounts.map((key, value) => MapEntry(key, value.toString()));
+          if (currentPedido.selectedPaymentMethod.isNotEmpty &&
+              !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
+            currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
+                ? currentPedido.availablePaymentMethods.first['title'] ?? ''
+                : '';
+          }
+        });
+        await logToFile('Fetching shipping cost for CEP: $cep');
+        final costResponse = await http.get(
+          Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
+          headers: {'Content-Type': 'application/json'},
+        ).timeout(const Duration(seconds: 10), onTimeout: () {
+          throw Exception('Timeout ao buscar custo de frete');
+        });
+        await logToFile('Shipping cost response: status=${costResponse.statusCode}, body=${costResponse.body}');
+        if (costResponse.statusCode == 200) {
+          final costData = jsonDecode(costResponse.body);
+          if (costData['status'] == 'success' && costData['shipping_options']?.isNotEmpty == true) {
+            shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
+            await logToFile('Shipping cost parsed: $shippingCost');
+          } else {
+            await logToFile('No valid shipping options for CEP: $cep');
+            shippingCost = 0.0;
+          }
+        } else {
+          throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode}');
+        }
+
+        // Só atualiza se NÃO foi editado manualmente
+        if (!currentPedido.isShippingCostManuallyEdited) {
+          setState(() {
+            currentPedido.shippingCost = shippingCost;
+            currentPedido.shippingCostController.text = shippingCost.toStringAsFixed(2);
+          });
+        }
+
+        await _savePersistedData(currentPedido);
+        await logToFile('Updated shipping cost: $shippingCost');
+        await prefs.setString(
+            cacheKey,
+            jsonEncode({
+              'store_final': currentPedido.storeFinal,
+              'pickup_store_id': currentPedido.pickupStoreId,
+              'shipping_cost': shippingCost,
+              'payment_methods': currentPedido.availablePaymentMethods,
+              'payment_accounts': currentPedido.paymentAccounts,
+            }));
+        await logToFile('Saved to cache: $cacheKey');
+      } else {
+        throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode}');
+      }
+    } catch (e) {
+      await logToFile('Erro em _checkStoreByCep: $e');
+      setState(() {
+        currentPedido.storeFinal = 'Central Distribuição (Sagrada Família)';
+        currentPedido.pickupStoreId = '86261';
+        currentPedido.shippingCost = 0.0;
+        currentPedido.shippingCostController.text = '0.00';
+        currentPedido.availablePaymentMethods = [
+          {'id': 'pagarme_custom_pix', 'title': 'Pix'},
+          {'id': 'stripe', 'title': 'Cartão de Crédito On-line'},
+          {'id': 'cod', 'title': 'Dinheiro na Entrega'},
+          {'id': 'custom_729b8aa9fc227ff', 'title': 'Cartão na Entrega'},
+          {'id': 'custom_e876f567c151864', 'title': 'Vale Alimentação'},
+        ];
+        currentPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+        if (currentPedido.selectedPaymentMethod.isNotEmpty &&
+            !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
+          currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
+              ? currentPedido.availablePaymentMethods.first['title'] ?? ''
+              : '';
+        }
+      });
+      await _savePersistedData(currentPedido);
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
+        await logToFile('Finalizado _checkStoreByCep: _isLoading=false');
       }
-    }
-  });
-}
-
-
-
-Future<void> _checkStoreByCep() async {
-  final currentPedido = _pedidos[_currentTabIndex];
-  final cep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
-  await logToFile('Iniciando _checkStoreByCep: cep=$cep, shippingMethod=${currentPedido.shippingMethod}');
-  setState(() => _isLoading = true);
-  try {
-    if (cep.length != 8 && currentPedido.shippingMethod != 'pickup') {
-      await logToFile('CEP inválido ou ausente, resetting store and cost');
-      setState(() {
-        currentPedido.shippingCost = 0.0;
-        currentPedido.shippingCostController.text = '0.00';
-        currentPedido.storeFinal = '';
-        currentPedido.pickupStoreId = '';
-        currentPedido.availablePaymentMethods = [];
-        currentPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
-      });
-      await _savePersistedData(currentPedido);
-      return;
-    }
-
-    // Verificar cache de CEP
-    final prefs = await SharedPreferences.getInstance();
-    final cacheKey = 'cep_data_$cep';
-    final cachedData = prefs.getString(cacheKey);
-    if (cachedData != null) {
-      final data = jsonDecode(cachedData);
-      setState(() {
-        currentPedido.storeFinal = data['store_final']?.toString() ?? 'Central Distribuição (Sagrada Família)';
-        currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(currentPedido.storeFinal);
-        currentPedido.shippingCost = double.tryParse(data['shipping_cost']?.toString() ?? '0.0') ?? 0.0;
-        currentPedido.shippingCostController.text = currentPedido.shippingCost.toStringAsFixed(2);
-        final rawPaymentMethods = data['payment_methods'] as List<dynamic>? ?? [];
-        currentPedido.availablePaymentMethods = rawPaymentMethods.map((m) {
-          final map = m as Map;
-          return {
-            'id': map['id']?.toString() ?? '',
-            'title': map['title']?.toString() ?? '',
-          };
-        }).toList();
-        final paymentAccounts = data['payment_accounts'] as Map? ?? {'stripe': 'stripe', 'pagarme': 'central'};
-        currentPedido.paymentAccounts = paymentAccounts.map((key, value) => MapEntry(key.toString(), value.toString()));
-        if (currentPedido.selectedPaymentMethod.isNotEmpty &&
-            !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
-          currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
-              ? currentPedido.availablePaymentMethods.first['title'] ?? ''
-              : '';
-        }
-      });
-      await logToFile('Loaded CEP data from cache: storeFinal=${currentPedido.storeFinal}, shippingCost=${currentPedido.shippingCost}');
-      await _savePersistedData(currentPedido);
-      return;
-    }
-
-    final normalizedDate = normalizeYmd(currentPedido.schedulingDate);
-    final requestBody = {
-      'cep': cep,
-      'shipping_method': currentPedido.shippingMethod,
-      'pickup_store': currentPedido.shippingMethod == 'pickup' ? currentPedido.storeFinal : '',
-      'delivery_date': currentPedido.shippingMethod == 'delivery' ? normalizedDate : '',
-      'pickup_date': currentPedido.shippingMethod == 'pickup' ? normalizedDate : '',
-    };
-    await logToFile('Sending store-decision request: ${jsonEncode(requestBody)}');
-    final storeResponse = await http.post(
-      Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(requestBody),
-    ).timeout(const Duration(seconds: 10), onTimeout: () {
-      throw Exception('Timeout ao buscar opções de entrega');
-    });
-    await logToFile('Store decision response: status=${storeResponse.statusCode}, body=${storeResponse.body}');
-
-    double shippingCost = 0.0;
-    if (storeResponse.statusCode == 200) {
-      final data = jsonDecode(storeResponse.body);
-      await logToFile('Parsed JSON: ${jsonEncode(data)}');
-      final newStoreFinal = data['effective_store_final']?.toString() ?? data['store_final']?.toString() ?? 'Central Distribuição (Sagrada Família)';
-      setState(() {
-        currentPedido.storeFinal = newStoreFinal;
-        currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(newStoreFinal);
-        final rawPaymentMethods = List<Map<String, dynamic>>.from(data['payment_methods'] ?? []);
-currentPedido.availablePaymentMethods = rawPaymentMethods.map((m) => ({
-      'id': m['id']?.toString() ?? '',
-      'title': m['title']?.toString() ?? ''
-    })).toList();
-        final paymentAccounts = Map<String, dynamic>.from(data['payment_accounts'] ?? {'stripe': 'stripe', 'pagarme': 'central'});
-        currentPedido.paymentAccounts = paymentAccounts.map((key, value) => MapEntry(key, value.toString()));
-        if (currentPedido.selectedPaymentMethod.isNotEmpty &&
-            !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
-          currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
-              ? currentPedido.availablePaymentMethods.first['title'] ?? ''
-              : '';
-        }
-      });
-
-      await logToFile('Fetching shipping cost for CEP: $cep');
-      final costResponse = await http.get(
-        Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 10), onTimeout: () {
-        throw Exception('Timeout ao buscar custo de frete');
-      });
-      await logToFile('Shipping cost response: status=${costResponse.statusCode}, body=${costResponse.body}');
-      if (costResponse.statusCode == 200) {
-        final costData = jsonDecode(costResponse.body);
-        if (costData['status'] == 'success' && costData['shipping_options']?.isNotEmpty == true) {
-          shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
-          await logToFile('Shipping cost parsed: $shippingCost');
-        } else {
-          await logToFile('No valid shipping options for CEP: $cep');
-          shippingCost = 0.0;
-        }
-      } else {
-        throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode}');
-      }
-
-      setState(() {
-        currentPedido.shippingCost = shippingCost;
-        currentPedido.shippingCostController.text = shippingCost.toStringAsFixed(2);
-      });
-      await _savePersistedData(currentPedido);
-      await logToFile('Updated shipping cost: $shippingCost');
-
-      // Salvar no cache
-      await prefs.setString(
-          cacheKey,
-          jsonEncode({
-            'store_final': currentPedido.storeFinal,
-            'pickup_store_id': currentPedido.pickupStoreId,
-            'shipping_cost': shippingCost,
-            'payment_methods': currentPedido.availablePaymentMethods,
-            'payment_accounts': currentPedido.paymentAccounts,
-          }));
-      await logToFile('Saved to cache: $cacheKey');
-    } else {
-      throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode}');
-    }
-  } catch (e) {
-    await logToFile('Erro em _checkStoreByCep: $e');
-    setState(() {
-      currentPedido.storeFinal = 'Central Distribuição (Sagrada Família)';
-      currentPedido.pickupStoreId = '86261';
-      currentPedido.shippingCost = 0.0;
-      currentPedido.shippingCostController.text = '0.00';
-      currentPedido.availablePaymentMethods = [
-        {'id': 'pagarme_custom_pix', 'title': 'Pix'},
-        {'id': 'stripe', 'title': 'Cartão de Crédito On-line'},
-        {'id': 'cod', 'title': 'Dinheiro na Entrega'},
-        {'id': 'custom_729b8aa9fc227ff', 'title': 'Cartão na Entrega'},
-        {'id': 'custom_e876f567c151864', 'title': 'Vale Alimentação'},
-      ];
-      currentPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
-      if (currentPedido.selectedPaymentMethod.isNotEmpty &&
-          !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
-        currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
-            ? currentPedido.availablePaymentMethods.first['title'] ?? ''
-            : '';
-      }
-    });
-    await _savePersistedData(currentPedido);
-  } finally {
-    if (mounted) {
-      setState(() => _isLoading = false);
-      await logToFile('Finalizado _checkStoreByCep: _isLoading=false');
     }
   }
-}
-
 
   Future<void> _createOrder() async {
-  final currentPedido = _pedidos[_currentTabIndex];
-  final errors = <String>[];
-  final normalizedDate = normalizeYmd(currentPedido.schedulingDate);
-  final normalizedTime = ensureTimeRange(currentPedido.schedulingTime);
-  final phone = currentPedido.phoneController.text.replaceAll(RegExp(r'\D'), '').trim();
-  if (phone.length != 11) {
-    errors.add('Insira um número de telefone válido (11 dígitos com DDD)');
-    await logToFile('Erro de validação - Telefone: $phone, Cleaned: ${phone.replaceAll(RegExp(r'\D'), '')}, isPhoneValid: false');
-  }
-  if (currentPedido.nameController.text.isEmpty) errors.add('O nome do cliente é obrigatório');
-  if (currentPedido.shippingMethod == 'delivery' && currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').length != 8) {
-    errors.add('Digite um CEP válido (8 dígitos) para entrega');
-  }
-  if (currentPedido.shippingMethod == 'delivery' && currentPedido.addressController.text.isEmpty) {
-    errors.add('O endereço é obrigatório para entrega');
-  }
-  if (currentPedido.shippingMethod == 'delivery' && currentPedido.numberController.text.isEmpty) {
-    errors.add('O número do endereço é obrigatório para entrega');
-  }
-  if (currentPedido.shippingMethod == 'delivery' && currentPedido.neighborhoodController.text.isEmpty) {
-    errors.add('O bairro é obrigatório para entrega');
-  }
-  if (currentPedido.shippingMethod == 'delivery' && currentPedido.cityController.text.isEmpty) {
-    errors.add('A cidade é obrigatória para entrega');
-  }
-  if (currentPedido.shippingMethod == 'pickup' && currentPedido.pickupStoreId.isEmpty) {
-    errors.add('Selecione uma loja para retirada');
-  }
-  if (currentPedido.products.isEmpty) errors.add('Adicione pelo menos um produto ao pedido');
-  if (currentPedido.shippingMethod.isEmpty) errors.add('Selecione o método de entrega');
-  if (currentPedido.selectedPaymentMethod.isEmpty) errors.add('Selecione um método de pagamento');
-  if (normalizedDate.isEmpty || normalizedTime.isEmpty) errors.add('Selecione a data e o horário de entrega/retirada');
-  if (errors.isNotEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(errors.join('\n')), duration: const Duration(seconds: 5)),
-    );
-    await logToFile('Erro de validação: ${errors.join(', ')}');
-    setState(() => _isLoading = false);
-    return;
-  }
-  setState(() => _isLoading = true);
-  String? savedPaymentInstructions;
-  try {
-    final cep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
-    final requestBody = {
-      'cep': cep,
-      'shipping_method': currentPedido.shippingMethod,
-      'pickup_store': currentPedido.shippingMethod == 'pickup' ? currentPedido.storeFinal : '',
-      'delivery_date': currentPedido.shippingMethod == 'delivery' ? normalizedDate : '',
-      'pickup_date': currentPedido.shippingMethod == 'pickup' ? normalizedDate : '',
-    };
-    await logToFile('Sending request to store-decision endpoint: ${jsonEncode(requestBody)}');
-    final storeResponse = await http.post(
-      Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(requestBody),
-    ).timeout(Duration(seconds: 15), onTimeout: () {
-      throw Exception('Timeout ao buscar opções de entrega');
-    });
-    await logToFile('Store decision response status: ${storeResponse.statusCode}, body: ${storeResponse.body}');
-    double shippingCost = 0.0;
-    if (currentPedido.shippingMethod == 'delivery') {
-      await logToFile('Fetching shipping cost for CEP: $cep');
-      final costResponse = await http.get(
-        Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(Duration(seconds: 15), onTimeout: () {
-        throw Exception('Timeout ao buscar custo de frete');
-      });
-      await logToFile('Shipping cost response status: ${costResponse.statusCode}, body: ${costResponse.body}');
-      if (costResponse.statusCode == 200) {
-        final costData = jsonDecode(costResponse.body);
-        if (costData['status'] == 'success' && costData['shipping_options'] != null && costData['shipping_options'].isNotEmpty) {
-          shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
-        } else {
-          await logToFile('Nenhuma opção de frete válida retornada para CEP: $cep');
-          shippingCost = 0.0;
-        }
-      } else {
-        throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode} - ${costResponse.body}');
-      }
+    final currentPedido = _pedidos[_currentTabIndex];
+    final errors = <String>[];
+    final normalizedDate = normalizeYmd(currentPedido.schedulingDate);
+    final normalizedTime = ensureTimeRange(currentPedido.schedulingTime);
+    final phone = currentPedido.phoneController.text.replaceAll(RegExp(r'\D'), '').trim();
+    if (phone.length != 11) {
+      errors.add('Insira um número de telefone válido (11 dígitos com DDD)');
+      await logToFile('Erro de validação - Telefone: $phone, Cleaned: ${phone.replaceAll(RegExp(r'\D'), '')}, isPhoneValid: false');
     }
-    if (storeResponse.statusCode == 200) {
-      final data = jsonDecode(storeResponse.body);
-      final newStoreFinal = data['effective_store_final']?.toString() ?? data['store_final']?.toString();
-      if (newStoreFinal == null) {
-        throw Exception('Nenhuma loja válida retornada pelo endpoint store-decision.');
-      }
-      setState(() {
-        currentPedido.storeFinal = newStoreFinal;
-        currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(newStoreFinal);
-        currentPedido.shippingCost = shippingCost;
-        currentPedido.shippingCostController.text = shippingCost.toStringAsFixed(2);
-        final rawPaymentMethods = List<Map>.from(data['payment_methods'] ?? []);
-        currentPedido.availablePaymentMethods = [];
-        final seenTitles = <String>{};
-        for (var m in rawPaymentMethods) {
-          final id = m['id']?.toString() ?? '';
-          final title = m['title']?.toString() ?? '';
-          if (id == 'woo_payment_on_delivery' && !seenTitles.contains('Dinheiro na Entrega')) {
-            currentPedido.availablePaymentMethods.add({'id': 'cod', 'title': 'Dinheiro na Entrega'});
-            seenTitles.add('Dinheiro na Entrega');
-          } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') && !seenTitles.contains('Cartão de Crédito On-line')) {
-            currentPedido.availablePaymentMethods.add({
-              'id': data['payment_accounts']['stripe'] ?? 'stripe',
-              'title': 'Cartão de Crédito On-line'
-            });
-            seenTitles.add('Cartão de Crédito On-line');
-          } else if (!seenTitles.contains(title)) {
-            currentPedido.availablePaymentMethods.add({'id': id, 'title': title});
-            seenTitles.add(title);
-          }
-        }
-        final paymentAccounts = data['payment_accounts'] as Map?;
-        currentPedido.paymentAccounts = paymentAccounts != null
-            ? paymentAccounts.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''))
-            : {
-                'stripe': newStoreFinal == 'Unidade Barreiro' ? 'stripe_cc' : newStoreFinal == 'Unidade Sion' ? 'eh_stripe_pay' : 'stripe',
-                'pagarme': newStoreFinal == 'Unidade Barreiro' ? 'barreiro' : newStoreFinal == 'Unidade Sion' ? 'sion' : 'central'
-              };
-        if (currentPedido.selectedPaymentMethod.isNotEmpty &&
-            !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
-          currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
-              ? currentPedido.availablePaymentMethods.first['title'] ?? ''
-              : '';
-        }
-      });
-      await _savePersistedData(currentPedido);
-    } else {
-      throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode} - ${storeResponse.body}');
+    if (currentPedido.nameController.text.isEmpty) errors.add('O nome do cliente é obrigatório');
+    if (currentPedido.shippingMethod == 'delivery' && currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').length != 8) {
+      errors.add('Digite um CEP válido (8 dígitos) para entrega');
     }
-    if (currentPedido.shippingMethod == 'pickup') {
-      currentPedido.shippingCost = 0.0;
-      currentPedido.shippingCostController.text = '0.00';
+    if (currentPedido.shippingMethod == 'delivery' && currentPedido.addressController.text.isEmpty) {
+      errors.add('O endereço é obrigatório para entrega');
     }
-    await logToFile('[agendamento] date(raw)="${currentPedido.schedulingDate}" '
-        'time(raw)="${currentPedido.schedulingTime}" '
-        '-> date(norm)="$normalizedDate" time(norm)="$normalizedTime"');
-    final storeFinal = currentPedido.storeFinal.isEmpty ? 'Central Distribuição (Sagrada Família)' : currentPedido.storeFinal;
-    final storeId = StoreNormalize.getId(storeFinal);
-    final normalizedStoreFinal = StoreNormalize.getName(storeId);
-    final service = CriarPedidoService();
-    final billingCompany = {'Alline': '7', 'Cássio Vinicius': '78', 'Maria Eduarda': '77'}
-        .entries
-        .firstWhere((entry) => entry.key == currentPedido.selectedVendedor, orElse: () => MapEntry('', ''))
-        .value;
-    final methodSlug = _paymentSlugFromLabel(currentPedido.selectedPaymentMethod);
-    await logToFile('[_createOrder] Selecionado (label): ${currentPedido.selectedPaymentMethod} -> slug="$methodSlug"');
-    final order = await service.createOrder(
-      customerName: currentPedido.nameController.text,
-      customerEmail: 'orders@aogosto.com.br',
-      customerPhone: phone,
-      billingCompany: billingCompany,
-      products: currentPedido.products,
-      shippingMethod: currentPedido.shippingMethod,
-      storeFinal: normalizedStoreFinal,
-      pickupStoreId: storeId,
-      billingPostcode: cep,
-      billingAddress1: currentPedido.addressController.text,
-      billingNumber: currentPedido.numberController.text,
-      billingAddress2: currentPedido.complementController.text,
-      billingNeighborhood: currentPedido.neighborhoodController.text,
-      billingCity: currentPedido.cityController.text,
-      shippingCost: currentPedido.shippingCost,
-      paymentMethod: methodSlug,
-      customerNotes: currentPedido.showNotesField ? currentPedido.notesController.text : '',
-      schedulingDate: normalizedDate,
-      schedulingTime: normalizedTime,
-      couponCode: currentPedido.showCouponField ? currentPedido.couponController.text : '',
-      paymentAccountStripe: currentPedido.paymentAccounts['stripe'] ?? 'stripe',
-      paymentAccountPagarme: currentPedido.paymentAccounts['pagarme'] ?? 'central',
-    );
-    await logToFile('Order created: #${order['id']}, store: ${currentPedido.storeFinal}, payment: $methodSlug');
-    currentPedido.updateLastPhoneNumber(currentPedido.phoneController.text);
-    final isPix = (methodSlug == 'pagarme_custom_pix');
-    final isStripe = (methodSlug == currentPedido.paymentAccounts['stripe']);
-    String? savedPaymentInstructions;
-    if (isPix || isStripe) {
-      final totalBeforeDiscount = currentPedido.products.fold<double>(
-        0.0,
-        (sum, product) => sum + (product['price'] * (product['quantity'] ?? 1)),
-      ) + currentPedido.shippingCost;
-      final discountAmount = currentPedido.isCouponValid ? currentPedido.discountAmount : 0.0;
-      final totalAmount = totalBeforeDiscount - discountAmount;
-      final paymentLinkResult = await _generatePaymentLink(
-        customerName: currentPedido.nameController.text,
-        phoneNumber: currentPedido.phoneController.text,
-        amount: totalAmount,
-        storeUnit: normalizedStoreFinal,
-        paymentMethod: isPix ? 'Pix' : 'Stripe',
-        orderId: order['id'].toString(),
+    if (currentPedido.shippingMethod == 'delivery' && currentPedido.numberController.text.isEmpty) {
+      errors.add('O número do endereço é obrigatório para entrega');
+    }
+    if (currentPedido.shippingMethod == 'delivery' && currentPedido.neighborhoodController.text.isEmpty) {
+      errors.add('O bairro é obrigatório para entrega');
+    }
+    if (currentPedido.shippingMethod == 'delivery' && currentPedido.cityController.text.isEmpty) {
+      errors.add('A cidade é obrigatória para entrega');
+    }
+    if (currentPedido.shippingMethod == 'pickup' && currentPedido.pickupStoreId.isEmpty) {
+      errors.add('Selecione uma loja para retirada');
+    }
+    if (currentPedido.products.isEmpty) errors.add('Adicione pelo menos um produto ao pedido');
+    if (currentPedido.shippingMethod.isEmpty) errors.add('Selecione o método de entrega');
+    if (currentPedido.selectedPaymentMethod.isEmpty) errors.add('Selecione um método de pagamento');
+    if (normalizedDate.isEmpty || normalizedTime.isEmpty) errors.add('Selecione a data e o horário de entrega/retirada');
+    if (errors.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errors.join('\n')), duration: const Duration(seconds: 5)),
       );
-      if (paymentLinkResult != null) {
-        savedPaymentInstructions = isPix
-            ? jsonEncode({
-                'type': 'pix',
-                'text': paymentLinkResult['text'] ?? ''
-              })
-            : jsonEncode({
-                'type': 'stripe',
-                'url': paymentLinkResult['url'] ?? ''
-              });
-        await logToFile('Payment instructions generated: $savedPaymentInstructions');
-      } else {
-        await logToFile('Erro: paymentLinkResult is null for payment method: $methodSlug');
-      }
+      await logToFile('Erro de validação: ${errors.join(', ')}');
+      setState(() => _isLoading = false);
+      return;
     }
-    if (mounted) {
-      setState(() {
-        _resultMessage = 'Pedido #${order['id']} criado com sucesso!${savedPaymentInstructions != null ? '\nInstruções de pagamento geradas.' : ''}';
-        currentPedido.paymentInstructions = savedPaymentInstructions;
-        currentPedido.resetControllers();
-        currentPedido.products.clear();
-        currentPedido.shippingMethod = '';
-        currentPedido.selectedPaymentMethod = '';
-        currentPedido.storeFinal = '';
-        currentPedido.pickupStoreId = '';
+    setState(() => _isLoading = true);
+    String? savedPaymentInstructions;
+    try {
+      final cep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
+      final requestBody = {
+        'cep': cep,
+        'shipping_method': currentPedido.shippingMethod,
+        'pickup_store': currentPedido.shippingMethod == 'pickup' ? currentPedido.storeFinal : '',
+        'delivery_date': currentPedido.shippingMethod == 'delivery' ? normalizedDate : '',
+        'pickup_date': currentPedido.shippingMethod == 'pickup' ? normalizedDate : '',
+      };
+      await logToFile('Sending request to store-decision endpoint: ${jsonEncode(requestBody)}');
+      final storeResponse = await http.post(
+        Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(requestBody),
+      ).timeout(Duration(seconds: 15), onTimeout: () {
+        throw Exception('Timeout ao buscar opções de entrega');
+      });
+      await logToFile('Store decision response status: ${storeResponse.statusCode}, body: ${storeResponse.body}');
+      double shippingCost = 0.0;
+      if (currentPedido.shippingMethod == 'delivery') {
+        await logToFile('Fetching shipping cost for CEP: $cep');
+        final costResponse = await http.get(
+          Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
+          headers: {'Content-Type': 'application/json'},
+        ).timeout(Duration(seconds: 15), onTimeout: () {
+          throw Exception('Timeout ao buscar custo de frete');
+        });
+        await logToFile('Shipping cost response status: ${costResponse.statusCode}, body: ${costResponse.body}');
+        if (costResponse.statusCode == 200) {
+          final costData = jsonDecode(costResponse.body);
+          if (costData['status'] == 'success' && costData['shipping_options'] != null && costData['shipping_options'].isNotEmpty) {
+            shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
+          } else {
+            await logToFile('Nenhuma opção de frete válida retornada para CEP: $cep');
+            shippingCost = 0.0;
+          }
+        } else {
+          throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode} - ${costResponse.body}');
+        }
+      }
+      if (storeResponse.statusCode == 200) {
+        final data = jsonDecode(storeResponse.body);
+        final newStoreFinal = data['effective_store_final']?.toString() ?? data['store_final']?.toString();
+        if (newStoreFinal == null) {
+          throw Exception('Nenhuma loja válida retornada pelo endpoint store-decision.');
+        }
+        setState(() {
+          currentPedido.storeFinal = newStoreFinal;
+          currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(newStoreFinal);
+          currentPedido.shippingCost = shippingCost;
+          currentPedido.shippingCostController.text = shippingCost.toStringAsFixed(2);
+          final rawPaymentMethods = List<Map>.from(data['payment_methods'] ?? []);
+          currentPedido.availablePaymentMethods = [];
+          final seenTitles = <String>{};
+          for (var m in rawPaymentMethods) {
+            final id = m['id']?.toString() ?? '';
+            final title = m['title']?.toString() ?? '';
+            if (id == 'woo_payment_on_delivery' && !seenTitles.contains('Dinheiro na Entrega')) {
+              currentPedido.availablePaymentMethods.add({'id': 'cod', 'title': 'Dinheiro na Entrega'});
+              seenTitles.add('Dinheiro na Entrega');
+            } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') && !seenTitles.contains('Cartão de Crédito On-line')) {
+              currentPedido.availablePaymentMethods.add({
+                'id': data['payment_accounts']['stripe'] ?? 'stripe',
+                'title': 'Cartão de Crédito On-line'
+              });
+              seenTitles.add('Cartão de Crédito On-line');
+            } else if (!seenTitles.contains(title)) {
+              currentPedido.availablePaymentMethods.add({'id': id, 'title': title});
+              seenTitles.add(title);
+            }
+          }
+          final paymentAccounts = data['payment_accounts'] as Map?;
+          currentPedido.paymentAccounts = paymentAccounts != null
+              ? paymentAccounts.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''))
+              : {
+                  'stripe': newStoreFinal == 'Unidade Barreiro' ? 'stripe_cc' : newStoreFinal == 'Unidade Sion' ? 'eh_stripe_pay' : 'stripe',
+                  'pagarme': newStoreFinal == 'Unidade Barreiro' ? 'barreiro' : newStoreFinal == 'Unidade Sion' ? 'sion' : 'central'
+                };
+          if (currentPedido.selectedPaymentMethod.isNotEmpty &&
+              !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
+            currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
+                ? currentPedido.availablePaymentMethods.first['title'] ?? ''
+                : '';
+          }
+        });
+        await _savePersistedData(currentPedido);
+      } else {
+        throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode} - ${storeResponse.body}');
+      }
+      if (currentPedido.shippingMethod == 'pickup') {
         currentPedido.shippingCost = 0.0;
         currentPedido.shippingCostController.text = '0.00';
-        currentPedido.showNotesField = false;
-        currentPedido.showCouponField = false;
-        currentPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-        currentPedido.schedulingTime = '09:00 - 12:00';
-        currentPedido.isCouponValid = false;
-        currentPedido.discountAmount = 0.0;
-        currentPedido.couponErrorMessage = null;
-        currentPedido.availablePaymentMethods = [];
-        currentPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
-      });
-      await _savePersistedData(currentPedido);
-    }
-  } catch (error, stackTrace) {
-    await logToFile('Erro ao criar pedido: $error, StackTrace: $stackTrace');
-    if (mounted) {
-      setState(() {
-        _resultMessage = 'Erro ao criar pedido: $error';
-      });
-    }
-  } finally {
-    if (mounted) {
-      setState(() => _isLoading = false);
-      final tabState = context.findAncestorStateOfType<_KeepAliveTabState>();
-      if (tabState != null) {
-        tabState.resetAddressSection();
       }
-      await _savePersistedData(currentPedido);
+      await logToFile('[agendamento] date(raw)="${currentPedido.schedulingDate}" '
+          'time(raw)="${currentPedido.schedulingTime}" '
+          '-> date(norm)="$normalizedDate" time(norm)="$normalizedTime"');
+      final storeFinal = currentPedido.storeFinal.isEmpty ? 'Central Distribuição (Sagrada Família)' : currentPedido.storeFinal;
+      final storeId = StoreNormalize.getId(storeFinal);
+      final normalizedStoreFinal = StoreNormalize.getName(storeId);
+      final service = CriarPedidoService();
+      final billingCompany = {'Alline': '7', 'Cássio Vinicius': '78', 'Maria Eduarda': '77'}
+          .entries
+          .firstWhere((entry) => entry.key == currentPedido.selectedVendedor, orElse: () => MapEntry('', ''))
+          .value;
+      final methodSlug = _paymentSlugFromLabel(currentPedido.selectedPaymentMethod);
+      await logToFile('[_createOrder] Selecionado (label): ${currentPedido.selectedPaymentMethod} -> slug="$methodSlug"');
+      final order = await service.createOrder(
+        customerName: currentPedido.nameController.text,
+        customerEmail: 'orders@aogosto.com.br',
+        customerPhone: phone,
+        billingCompany: billingCompany,
+        products: currentPedido.products,
+        shippingMethod: currentPedido.shippingMethod,
+        storeFinal: normalizedStoreFinal,
+        pickupStoreId: storeId,
+        billingPostcode: cep,
+        billingAddress1: currentPedido.addressController.text,
+        billingNumber: currentPedido.numberController.text,
+        billingAddress2: currentPedido.complementController.text,
+        billingNeighborhood: currentPedido.neighborhoodController.text,
+        billingCity: currentPedido.cityController.text,
+        shippingCost: currentPedido.shippingCost,
+        paymentMethod: methodSlug,
+        customerNotes: currentPedido.showNotesField ? currentPedido.notesController.text : '',
+        schedulingDate: normalizedDate,
+        schedulingTime: normalizedTime,
+        couponCode: currentPedido.showCouponField ? currentPedido.couponController.text : '',
+        paymentAccountStripe: currentPedido.paymentAccounts['stripe'] ?? 'stripe',
+        paymentAccountPagarme: currentPedido.paymentAccounts['pagarme'] ?? 'central',
+      );
+      await logToFile('Order created: #${order['id']}, store: ${currentPedido.storeFinal}, payment: $methodSlug');
+      currentPedido.updateLastPhoneNumber(currentPedido.phoneController.text);
+      final isPix = (methodSlug == 'pagarme_custom_pix');
+      final isStripe = (methodSlug == currentPedido.paymentAccounts['stripe']);
+      String? savedPaymentInstructions;
+      if (isPix || isStripe) {
+        final totalBeforeDiscount = currentPedido.products.fold<double>(
+          0.0,
+          (sum, product) => sum + (product['price'] * (product['quantity'] ?? 1)),
+        ) + currentPedido.shippingCost;
+        final discountAmount = currentPedido.isCouponValid ? currentPedido.discountAmount : 0.0;
+        final totalAmount = totalBeforeDiscount - discountAmount;
+        final paymentLinkResult = await _generatePaymentLink(
+          customerName: currentPedido.nameController.text,
+          phoneNumber: currentPedido.phoneController.text,
+          amount: totalAmount,
+          storeUnit: normalizedStoreFinal,
+          paymentMethod: isPix ? 'Pix' : 'Stripe',
+          orderId: order['id'].toString(),
+        );
+        if (paymentLinkResult != null) {
+          savedPaymentInstructions = isPix
+              ? jsonEncode({
+                  'type': 'pix',
+                  'text': paymentLinkResult['text'] ?? ''
+                })
+              : jsonEncode({
+                  'type': 'stripe',
+                  'url': paymentLinkResult['url'] ?? ''
+                });
+          await logToFile('Payment instructions generated: $savedPaymentInstructions');
+        } else {
+          await logToFile('Erro: paymentLinkResult is null for payment method: $methodSlug');
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _resultMessage = 'Pedido #${order['id']} criado com sucesso!${savedPaymentInstructions != null ? '\nInstruções de pagamento geradas.' : ''}';
+          currentPedido.paymentInstructions = savedPaymentInstructions;
+          currentPedido.resetControllers();
+          currentPedido.products.clear();
+          currentPedido.shippingMethod = '';
+          currentPedido.selectedPaymentMethod = '';
+          currentPedido.storeFinal = '';
+          currentPedido.pickupStoreId = '';
+          currentPedido.shippingCost = 0.0;
+          currentPedido.shippingCostController.text = '0.00';
+          currentPedido.showNotesField = false;
+          currentPedido.showCouponField = false;
+          currentPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+          currentPedido.schedulingTime = '09:00 - 12:00';
+          currentPedido.isCouponValid = false;
+          currentPedido.discountAmount = 0.0;
+          currentPedido.couponErrorMessage = null;
+          currentPedido.availablePaymentMethods = [];
+          currentPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+        });
+        await _savePersistedData(currentPedido);
+      }
+    } catch (error, stackTrace) {
+      await logToFile('Erro ao criar pedido: $error, StackTrace: $stackTrace');
+      if (mounted) {
+        setState(() {
+          _resultMessage = 'Erro ao criar pedido: $error';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        final tabState = context.findAncestorStateOfType<_KeepAliveTabState>();
+        if (tabState != null) {
+          tabState.resetAddressSection();
+        }
+        await _savePersistedData(currentPedido);
+      }
     }
   }
-}
 
   Future<void> _sendWhatsAppMessage(String phoneNumber, String message) async {
     final cleanPhone = phoneNumber.replaceAll(RegExp(r'\D'), '');
@@ -1036,7 +1025,6 @@ currentPedido.availablePaymentMethods = rawPaymentMethods.map((m) => ({
       "Token": "7343607cd11509da88407ea89353ebdd8a79bdf9c3152da4025274c08c370b7b90ab0b68307d28cf",
       "Content-Type": "application/json",
     };
-
     try {
       final response = await http.post(
         url,
@@ -1061,117 +1049,117 @@ currentPedido.availablePaymentMethods = rawPaymentMethods.map((m) => ({
   }
 
   Future<Map<String, String>?> _generatePaymentLink({
-  required String customerName,
-  required String phoneNumber,
-  required double amount,
-  required String storeUnit,
-  required String paymentMethod,
-  required String orderId,
-}) async {
-  final rawPhone = phoneNumber.replaceAll(RegExp(r'\D'), '').trim();
-  final areaCode = rawPhone.length >= 2 ? rawPhone.substring(0, 2) : '31';
-  final phone = rawPhone.length >= 9 ? rawPhone.substring(2) : rawPhone;
-  if (amount < 0.50) {
-    throw Exception('Erro ao gerar link de pagamento: O valor total do pedido deve ser maior ou igual a R\$ 0,50.');
-  }
-  final amountInCents = (amount * 100).toInt(); // Sempre em centavos para Stripe e Pagar.me
-  final storeId = StoreNormalize.getId(storeUnit);
-  final normalizedStoreUnit = StoreNormalize.getName(storeId);
-  final proxyUnit = StoreNormalize.getProxyUnit(normalizedStoreUnit);
-  String endpoint;
-  String proxyPath = paymentMethod == 'Pix' ? 'pagarme.php' : 'stripe.php';
-  endpoint = 'https://aogosto.com.br/proxy/${Uri.encodeComponent(proxyUnit)}/$proxyPath';
-  await logToFile('Gerando link de pagamento: paymentMethod=$paymentMethod, storeUnit=$storeUnit, proxyUnit=$proxyUnit, endpoint=$endpoint, amountInCents=$amountInCents');
-  try {
-    if (paymentMethod == 'Pix') {
-      final payloadPagarMe = {
-        'items': [
-          {'amount': amountInCents, 'description': 'Produtos Ao Gosto Carnes', 'quantity': 1},
-        ],
-        'customer': {
-          'name': customerName,
-          'email': 'app+${DateTime.now().millisecondsSinceEpoch}@aogosto.com.br',
-          'document': '06275992000570',
-          'type': 'company',
-          'phones': {
-            'home_phone': {'country_code': '55', 'number': phone, 'area_code': areaCode}
+    required String customerName,
+    required String phoneNumber,
+    required double amount,
+    required String storeUnit,
+    required String paymentMethod,
+    required String orderId,
+  }) async {
+    final rawPhone = phoneNumber.replaceAll(RegExp(r'\D'), '').trim();
+    final areaCode = rawPhone.length >= 2 ? rawPhone.substring(0, 2) : '31';
+    final phone = rawPhone.length >= 9 ? rawPhone.substring(2) : rawPhone;
+    if (amount < 0.50) {
+      throw Exception('Erro ao gerar link de pagamento: O valor total do pedido deve ser maior ou igual a R\$ 0,50.');
+    }
+    final amountInCents = (amount * 100).toInt();
+    final storeId = StoreNormalize.getId(storeUnit);
+    final normalizedStoreUnit = StoreNormalize.getName(storeId);
+    final proxyUnit = StoreNormalize.getProxyUnit(normalizedStoreUnit);
+    String endpoint;
+    String proxyPath = paymentMethod == 'Pix' ? 'pagarme.php' : 'stripe.php';
+    endpoint = 'https://aogosto.com.br/proxy/${Uri.encodeComponent(proxyUnit)}/$proxyPath';
+    await logToFile('Gerando link de pagamento: paymentMethod=$paymentMethod, storeUnit=$storeUnit, proxyUnit=$proxyUnit, endpoint=$endpoint, amountInCents=$amountInCents');
+    try {
+      if (paymentMethod == 'Pix') {
+        final payloadPagarMe = {
+          'items': [
+            {'amount': amountInCents, 'description': 'Produtos Ao Gosto Carnes', 'quantity': 1},
+          ],
+          'customer': {
+            'name': customerName,
+            'email': 'app+${DateTime.now().millisecondsSinceEpoch}@aogosto.com.br',
+            'document': '06275992000570',
+            'type': 'company',
+            'phones': {
+              'home_phone': {'country_code': '55', 'number': phone, 'area_code': areaCode}
+            },
           },
-        },
-        'payments': [
-          {
-            'payment_method': 'pix',
-            'pix': {'expires_in': 3600}
+          'payments': [
+            {
+              'payment_method': 'pix',
+              'pix': {'expires_in': 3600}
+            }
+          ],
+          'metadata': {'order_id': orderId, 'unidade': normalizedStoreUnit},
+        };
+        await logToFile('Payload PagarMe: ${jsonEncode(payloadPagarMe)}');
+        final response = await http.post(
+          Uri.parse(endpoint),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(payloadPagarMe),
+        );
+        await logToFile('Resposta do proxy PagarMe: status=${response.statusCode}, body=${response.body}');
+        if (response.statusCode != 200) {
+          throw Exception('Erro ao criar pedido PIX: ${jsonDecode(response.body)}');
+        }
+        final data = jsonDecode(response.body);
+        if (data['charges'] != null && data['charges'].isNotEmpty && data['charges'][0]['last_transaction'] != null) {
+          final pixInfo = data['charges'][0]['last_transaction'];
+          final pixText = pixInfo['text']?.toString() ?? '';
+          if (pixText.isEmpty) {
+            await logToFile('Aviso: pixText vazio, usando qr_code como fallback: ${pixInfo['qr_code'] ?? 'null'}');
+            final fallbackText = pixInfo['qr_code']?.toString() ?? '';
+            if (fallbackText.isEmpty) {
+              throw Exception('Nenhuma linha digitável ou QR code retornado para Pix.');
+            }
+            return {
+              'type': 'pix',
+              'text': fallbackText
+            };
           }
-        ],
-        'metadata': {'order_id': orderId, 'unidade': normalizedStoreUnit},
-      };
-      await logToFile('Payload PagarMe: ${jsonEncode(payloadPagarMe)}');
-      final response = await http.post(
-        Uri.parse(endpoint),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(payloadPagarMe),
-      );
-      await logToFile('Resposta do proxy PagarMe: status=${response.statusCode}, body=${response.body}');
-      if (response.statusCode != 200) {
-        throw Exception('Erro ao criar pedido PIX: ${jsonDecode(response.body)}');
-      }
-      final data = jsonDecode(response.body);
-      if (data['charges'] != null && data['charges'].isNotEmpty && data['charges'][0]['last_transaction'] != null) {
-        final pixInfo = data['charges'][0]['last_transaction'];
-        final pixText = pixInfo['text']?.toString() ?? '';
-        if (pixText.isEmpty) {
-          await logToFile('Aviso: pixText vazio, usando qr_code como fallback: ${pixInfo['qr_code'] ?? 'null'}');
-          final fallbackText = pixInfo['qr_code']?.toString() ?? '';
-          if (fallbackText.isEmpty) {
-            throw Exception('Nenhuma linha digitável ou QR code retornado para Pix.');
-          }
+          await logToFile('Pix text extraído: $pixText');
           return {
             'type': 'pix',
-            'text': fallbackText
+            'text': pixText
           };
+        } else {
+          throw Exception('Nenhuma transação PIX retornada ou estrutura de resposta inválida: ${jsonEncode(data)}');
         }
-        await logToFile('Pix text extraído: $pixText');
-        return {
-          'type': 'pix',
-          'text': pixText
+      } else {
+        final payloadStripe = {
+          'product_name': customerName,
+          'product_description': 'Produtos Ao Gosto Carnes',
+          'amount': amountInCents,
+          'phone_number': '($areaCode) $phone',
+          'metadata': {'order_id': orderId, 'unidade': normalizedStoreUnit},
         };
-      } else {
-        throw Exception('Nenhuma transação PIX retornada ou estrutura de resposta inválida: ${jsonEncode(data)}');
+        await logToFile('Payload Stripe: ${jsonEncode(payloadStripe)}');
+        final response = await http.post(
+          Uri.parse(endpoint),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(payloadStripe),
+        );
+        await logToFile('Resposta do proxy Stripe: ${response.body}');
+        if (response.body.isEmpty) {
+          throw Exception('Resposta do proxy está vazia. Status: ${response.statusCode}');
+        }
+        final data = jsonDecode(response.body);
+        if (response.statusCode != 200) {
+          throw Exception('Erro ao criar link Stripe: ${jsonEncode(data)}');
+        }
+        if (data['payment_link'] != null && data['payment_link']['url'] != null) {
+          await logToFile('Stripe URL gerada: ${data['payment_link']['url']}');
+          return {'type': 'stripe', 'url': data['payment_link']['url']};
+        } else {
+          throw Exception('Nenhuma URL de checkout retornada.');
+        }
       }
-    } else {
-      final payloadStripe = {
-        'product_name': customerName,
-        'product_description': 'Produtos Ao Gosto Carnes',
-        'amount': amountInCents,
-        'phone_number': '($areaCode) $phone',
-        'metadata': {'order_id': orderId, 'unidade': normalizedStoreUnit},
-      };
-      await logToFile('Payload Stripe: ${jsonEncode(payloadStripe)}');
-      final response = await http.post(
-        Uri.parse(endpoint),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(payloadStripe),
-      );
-      await logToFile('Resposta do proxy Stripe: ${response.body}');
-      if (response.body.isEmpty) {
-        throw Exception('Resposta do proxy está vazia. Status: ${response.statusCode}');
-      }
-      final data = jsonDecode(response.body);
-      if (response.statusCode != 200) {
-        throw Exception('Erro ao criar link Stripe: ${jsonEncode(data)}');
-      }
-      if (data['payment_link'] != null && data['payment_link']['url'] != null) {
-        await logToFile('Stripe URL gerada: ${data['payment_link']['url']}');
-        return {'type': 'stripe', 'url': data['payment_link']['url']};
-      } else {
-        throw Exception('Nenhuma URL de checkout retornada.');
-      }
+    } catch (error) {
+      await logToFile('Erro ao gerar link de pagamento: $error');
+      rethrow;
     }
-  } catch (error) {
-    await logToFile('Erro ao gerar link de pagamento: $error');
-    rethrow;
   }
-}
 
   void _onCouponValidated() {
     if (mounted) {
@@ -1180,68 +1168,67 @@ currentPedido.availablePaymentMethods = rawPaymentMethods.map((m) => ({
   }
 
   Future<void> _clearLocalData() async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.clear();
-  if (mounted) {
-    setState(() {
-      for (var pedido in _pedidos) {
-        pedido.nameController.removeListener(_updateTabs);
-        pedido.dispose();
-      }
-      _pedidos.clear();
-      final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
-      newPedido.nameController.addListener(_updateTabs);
-      newPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      newPedido.schedulingTime = '09:00 - 12:00';
-      newPedido.shippingMethod = 'delivery';
-      newPedido.lastCep = '';
-      newPedido.cepController = TextEditingController();
-      newPedido.addressController = TextEditingController();
-      newPedido.numberController = TextEditingController();
-      newPedido.complementController = TextEditingController();
-      newPedido.neighborhoodController = TextEditingController();
-      newPedido.cityController = TextEditingController();
-      newPedido.phoneController = TextEditingController();
-      newPedido.emailController = TextEditingController();
-      newPedido.notesController = TextEditingController();
-      newPedido.couponController = TextEditingController();
-      newPedido.shippingCost = 0.0;
-      newPedido.shippingCostController = TextEditingController(text: '0.00');
-      newPedido.storeFinal = '';
-      newPedido.pickupStoreId = '';
-      newPedido.products = [];
-      newPedido.showNotesField = false;
-      newPedido.showCouponField = false;
-      newPedido.isCouponValid = false;
-      newPedido.discountAmount = 0.0;
-      newPedido.couponErrorMessage = null;
-      newPedido.availablePaymentMethods = [];
-      newPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
-      newPedido.isCustomerSectionExpanded = true;
-      newPedido.isAddressSectionExpanded = true;
-      newPedido.isProductsSectionExpanded = true;
-      newPedido.isShippingSectionExpanded = true;
-      _pedidos.add(newPedido);
-      _currentTabIndex = 0;
-      _tabController.dispose();
-      _tabController = TabController(length: _pedidos.length, vsync: this);
-      _tabController.addListener(_handleTabSelection);
-      _isLoading = false;
-      _resultMessage = null;
-    });
-    // Forçar reset do AddressSection após setState
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final tabState = context.findAncestorStateOfType<_KeepAliveTabState>();
-      if (tabState != null) {
-        tabState.resetAddressSection();
-      }
-    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    if (mounted) {
+      setState(() {
+        for (var pedido in _pedidos) {
+          pedido.nameController.removeListener(_updateTabs);
+          pedido.dispose();
+        }
+        _pedidos.clear();
+        final newPedido = PedidoState(onCouponValidated: _onCouponValidated);
+        newPedido.nameController.addListener(_updateTabs);
+        newPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+        newPedido.schedulingTime = '09:00 - 12:00';
+        newPedido.shippingMethod = 'delivery';
+        newPedido.lastCep = '';
+        newPedido.cepController = TextEditingController();
+        newPedido.addressController = TextEditingController();
+        newPedido.numberController = TextEditingController();
+        newPedido.complementController = TextEditingController();
+        newPedido.neighborhoodController = TextEditingController();
+        newPedido.cityController = TextEditingController();
+        newPedido.phoneController = TextEditingController();
+        newPedido.emailController = TextEditingController();
+        newPedido.notesController = TextEditingController();
+        newPedido.couponController = TextEditingController();
+        newPedido.shippingCost = 0.0;
+        newPedido.shippingCostController = TextEditingController(text: '0.00');
+        newPedido.storeFinal = '';
+        newPedido.pickupStoreId = '';
+        newPedido.products = [];
+        newPedido.showNotesField = false;
+        newPedido.showCouponField = false;
+        newPedido.isCouponValid = false;
+        newPedido.discountAmount = 0.0;
+        newPedido.couponErrorMessage = null;
+        newPedido.availablePaymentMethods = [];
+        newPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+        newPedido.isCustomerSectionExpanded = true;
+        newPedido.isAddressSectionExpanded = true;
+        newPedido.isProductsSectionExpanded = true;
+        newPedido.isShippingSectionExpanded = true;
+        _pedidos.add(newPedido);
+        _currentTabIndex = 0;
+        _tabController.dispose();
+        _tabController = TabController(length: _pedidos.length, vsync: this);
+        _tabController.addListener(_handleTabSelection);
+        _isLoading = false;
+        _resultMessage = null;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final tabState = context.findAncestorStateOfType<_KeepAliveTabState>();
+        if (tabState != null) {
+          tabState.resetAddressSection();
+        }
+      });
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Dados locais limpos com sucesso')),
+    );
+    await logToFile('Dados locais limpos pelo usuário');
   }
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Dados locais limpos com sucesso')),
-  );
-  await logToFile('Dados locais limpos pelo usuário');
-}
 
   @override
   Widget build(BuildContext context) {
@@ -1346,46 +1333,47 @@ currentPedido.availablePaymentMethods = rawPaymentMethods.map((m) => ({
         ],
       ),
       body: Column(
-  children: [
-    if (_isLoading && !_isInitialized)
-      LinearProgressIndicator(
-        backgroundColor: primaryColor.withOpacity(0.2),
-        valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
-      ),
-    Expanded(
-      child: _isInitialized
-          ? TabBarView(
-              controller: _tabController,
-              physics: const NeverScrollableScrollPhysics(),
-              children: _pedidos.asMap().entries.map<Widget>((entry) {
-                final index = entry.key;
-                final pedido = entry.value;
-                return KeepAliveTab(
-                  key: ValueKey('tab_$index'),
-                  pedido: pedido,
-                  fetchCustomer: _fetchCustomer,
-                  createOrder: _createOrder,
-                  savePersistedData: _savePersistedData,
-                  checkStoreByCep: _checkStoreByCep,
-                  isLoading: _isLoading,
-                  resultMessage: _resultMessage,
-                  setStateCallback: () {
-                    if (mounted) {
-                      setState(() {});
-                    }
-                  },
-                  clearLocalData: _clearLocalData,
-                );
-              }).toList(),
-            )
-          : Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
-              ),
+        children: [
+          if (_isLoading && !_isInitialized)
+            LinearProgressIndicator(
+              backgroundColor: primaryColor.withOpacity(0.2),
+              valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
             ),
-    ),
-  ],
-),   );
+          Expanded(
+            child: _isInitialized
+                ? TabBarView(
+                    controller: _tabController,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: _pedidos.asMap().entries.map<Widget>((entry) {
+                      final index = entry.key;
+                      final pedido = entry.value;
+                      return KeepAliveTab(
+                        key: ValueKey('tab_$index'),
+                        pedido: pedido,
+                        fetchCustomer: _fetchCustomer,
+                        createOrder: _createOrder,
+                        savePersistedData: _savePersistedData,
+                        checkStoreByCep: _checkStoreByCep,
+                        isLoading: _isLoading,
+                        resultMessage: _resultMessage,
+                        setStateCallback: () {
+                          if (mounted) {
+                            setState(() {});
+                          }
+                        },
+                        clearLocalData: _clearLocalData,
+                      );
+                    }).toList(),
+                  )
+                : Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1421,14 +1409,11 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
   final _formKey = GlobalKey<FormState>();
   final GlobalKey _addressSectionKey = GlobalKey();
   final primaryColor = const Color(0xFFF28C38);
-  bool _isEditingShippingCost = false;
-  double _tempShippingCost = 0.0;
-  final _shippingCostController = TextEditingController();
-  int _addressSectionKeyCounter = 0; // Contador para chave única
+  int _addressSectionKeyCounter = 0;
 
   void resetAddressSection() {
     setState(() {
-      _addressSectionKeyCounter++; // Incrementar para forçar recriação
+      _addressSectionKeyCounter++;
       widget.pedido.cepController = TextEditingController();
       widget.pedido.addressController = TextEditingController();
       widget.pedido.numberController = TextEditingController();
@@ -1452,45 +1437,13 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
   @override
   void initState() {
     super.initState();
-    widget.pedido.addListener(_updateState);
-    _shippingCostController.text = widget.pedido.shippingCostController.text;
+    widget.pedido.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
-    _shippingCostController.dispose();
-    widget.pedido.removeListener(_updateState);
+    widget.pedido.removeListener(() => setState(() {}));
     super.dispose();
-  }
-
-  void _updateState() {
-    if (mounted) setState(() {});
-  }
-
-  void _startEditingShippingCost() {
-    setState(() {
-      _isEditingShippingCost = true;
-      _tempShippingCost = widget.pedido.shippingCost;
-      _shippingCostController.text = _tempShippingCost.toStringAsFixed(2);
-    });
-  }
-
-  void _saveShippingCost() {
-    final newCost = double.tryParse(_shippingCostController.text.replaceAll(',', '.')) ?? 0.0;
-    if (newCost >= 0) {
-      widget.setStateCallback();
-      widget.pedido.shippingCost = newCost;
-      widget.pedido.shippingCostController.text = newCost.toStringAsFixed(2);
-      widget.savePersistedData(widget.pedido);
-    }
-    setState(() => _isEditingShippingCost = false);
-  }
-
-  void _cancelEditingShippingCost() {
-    setState(() {
-      _isEditingShippingCost = false;
-      _shippingCostController.text = widget.pedido.shippingCostController.text;
-    });
   }
 
   DateTime? _parseInitialDate(String? dateString, String shippingMethod) {
@@ -1512,143 +1465,143 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
   }
 
   @override
-Widget build(BuildContext context) {
-  super.build(context);
-  final totalOriginal = widget.pedido.products.fold<double>(
-      0.0, (sum, product) => sum + (product['price'] * (product['quantity'] ?? 1)));
-  final totalWithDiscount = widget.pedido.calculateTotal(applyDiscount: true);
-  final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-  return Container(
-    color: isDarkMode ? Colors.grey[900] : Colors.grey[50],
-    child: Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              decoration: BoxDecoration(
-                color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                  CustomerSection(
-  phoneController: widget.pedido.phoneController,
-  onPhoneChanged: null,
-  onPhoneSubmitted: (value) => widget.savePersistedData(widget.pedido),
-  onFetchCustomer: widget.fetchCustomer,
-  nameController: widget.pedido.nameController,
-  onNameChanged: null,
-  onNameSubmitted: (value) => widget.savePersistedData(widget.pedido),
-  isLoading: widget.isLoading,
-),
-const SizedBox(height: 16),
-ExpansionPanelList(
-  elevation: 0,
-  expandedHeaderPadding: EdgeInsets.zero,
-  expansionCallback: (panelIndex, isExpanded) {
-    widget.setStateCallback();
-    widget.pedido.isAddressSectionExpanded = !widget.pedido.isAddressSectionExpanded;
-    widget.savePersistedData(widget.pedido);
-  },
-  children: [
-    ExpansionPanel(
-      headerBuilder: (context, isExpanded) => Container(
-        color: Colors.white, // Fundo branco para o header
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          title: Text(
-            'Endereço do Cliente',
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: isDarkMode ? Colors.white : Colors.black87,
-            ),
-          ),
-          trailing: AnimatedRotation(
-            turns: isExpanded ? 0.5 : 0,
-            duration: const Duration(milliseconds: 200),
-            child: Icon(
-              Icons.arrow_drop_down_rounded,
-              color: primaryColor,
-              size: 24,
-            ),
-          ),
-        ),
-      ),
-      body: AddressSection(
-        key: _addressSectionKey,
-        cepController: widget.pedido.cepController,
-        addressController: widget.pedido.addressController,
-        numberController: widget.pedido.numberController,
-        complementController: widget.pedido.complementController,
-        neighborhoodController: widget.pedido.neighborhoodController,
-        cityController: widget.pedido.cityController,
-        onChanged: (value) {
-          widget.setStateCallback();
-          widget.savePersistedData(widget.pedido);
-          final cleanCep = widget.pedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
-          if (cleanCep.length == 8) {
-            logToFile('Calling checkStoreByCep from AddressSection onChanged: cep=$cleanCep');
-            widget.checkStoreByCep();
-          }
-        },
-        onShippingCostUpdated: (cost) {
-          widget.setStateCallback();
-          widget.pedido.shippingCost = cost;
-          widget.pedido.shippingCostController.text = cost.toStringAsFixed(2);
-          widget.savePersistedData(widget.pedido);
-        },
-        onStoreUpdated: (storeFinal, pickupStoreId) {
-          widget.setStateCallback();
-          widget.pedido.storeFinal = storeFinal;
-          widget.pedido.pickupStoreId = pickupStoreId;
-          widget.savePersistedData(widget.pedido);
-          widget.checkStoreByCep();
-        },
-        externalShippingCost: widget.pedido.shippingCost,
-        shippingMethod: widget.pedido.shippingMethod,
-        setStateCallback: widget.setStateCallback,
-        savePersistedData: () => widget.savePersistedData(widget.pedido),
-        checkStoreByCep: widget.checkStoreByCep,
-        pedido: widget.pedido,
-        onReset: resetAddressSection,
-      ),
-      isExpanded: widget.pedido.isAddressSectionExpanded,
-    ),
-  ],
-),
-const SizedBox(height: 16),
-KeyedSubtree(
-  key: ValueKey(widget.pedido.products.length),
-  child: ProductSection(
-    products: widget.pedido.products,
-    onRemoveProduct: (index) {
-      if (index >= 0 && index < widget.pedido.products.length) {
-        widget.pedido.products.removeAt(index);
-        widget.setStateCallback();
-        widget.pedido.notifyListeners();
-        widget.savePersistedData(widget.pedido);
-      }
-    },
-    onAddProduct: () async {
-      final selectedProduct = await showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (context) => ProductSelectionDialog(),
-      );
-      if (selectedProduct != null && mounted) {
+  Widget build(BuildContext context) {
+    super.build(context);
+    final totalOriginal = widget.pedido.products.fold<double>(
+        0.0, (sum, product) => sum + (product['price'] * (product['quantity'] ?? 1)));
+    final totalWithDiscount = widget.pedido.calculateTotal(applyDiscount: true);
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      color: isDarkMode ? Colors.grey[900] : Colors.grey[50],
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                decoration: BoxDecoration(
+                  color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      CustomerSection(
+                        phoneController: widget.pedido.phoneController,
+                        onPhoneChanged: null,
+                        onPhoneSubmitted: (value) => widget.savePersistedData(widget.pedido),
+                        onFetchCustomer: widget.fetchCustomer,
+                        nameController: widget.pedido.nameController,
+                        onNameChanged: null,
+                        onNameSubmitted: (value) => widget.savePersistedData(widget.pedido),
+                        isLoading: widget.isLoading,
+                      ),
+                      const SizedBox(height: 16),
+                      ExpansionPanelList(
+                        elevation: 0,
+                        expandedHeaderPadding: EdgeInsets.zero,
+                        expansionCallback: (panelIndex, isExpanded) {
+                          widget.setStateCallback();
+                          widget.pedido.isAddressSectionExpanded = !widget.pedido.isAddressSectionExpanded;
+                          widget.savePersistedData(widget.pedido);
+                        },
+                        children: [
+                          ExpansionPanel(
+                            headerBuilder: (context, isExpanded) => Container(
+                              color: Colors.white,
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                title: Text(
+                                  'Endereço do Cliente',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDarkMode ? Colors.white : Colors.black87,
+                                  ),
+                                ),
+                                trailing: AnimatedRotation(
+                                  turns: isExpanded ? 0.5 : 0,
+                                  duration: const Duration(milliseconds: 200),
+                                  child: Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                    color: primaryColor,
+                                    size: 24,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            body: AddressSection(
+                              key: _addressSectionKey,
+                              cepController: widget.pedido.cepController,
+                              addressController: widget.pedido.addressController,
+                              numberController: widget.pedido.numberController,
+                              complementController: widget.pedido.complementController,
+                              neighborhoodController: widget.pedido.neighborhoodController,
+                              cityController: widget.pedido.cityController,
+                              onChanged: (value) {
+                                widget.setStateCallback();
+                                widget.savePersistedData(widget.pedido);
+                                final cleanCep = widget.pedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
+                                if (cleanCep.length == 8) {
+                                  logToFile('Calling checkStoreByCep from AddressSection onChanged: cep=$cleanCep');
+                                  widget.checkStoreByCep();
+                                }
+                              },
+                              onShippingCostUpdated: (cost) {
+                                widget.setStateCallback();
+                                widget.pedido.shippingCost = cost;
+                                widget.pedido.shippingCostController.text = cost.toStringAsFixed(2);
+                                widget.savePersistedData(widget.pedido);
+                              },
+                              onStoreUpdated: (storeFinal, pickupStoreId) {
+                                widget.setStateCallback();
+                                widget.pedido.storeFinal = storeFinal;
+                                widget.pedido.pickupStoreId = pickupStoreId;
+                                widget.savePersistedData(widget.pedido);
+                                widget.checkStoreByCep();
+                              },
+                              externalShippingCost: widget.pedido.shippingCost,
+                              shippingMethod: widget.pedido.shippingMethod,
+                              setStateCallback: widget.setStateCallback,
+                              savePersistedData: () => widget.savePersistedData(widget.pedido),
+                              checkStoreByCep: widget.checkStoreByCep,
+                              pedido: widget.pedido,
+                              onReset: resetAddressSection,
+                            ),
+                            isExpanded: widget.pedido.isAddressSectionExpanded,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      KeyedSubtree(
+                        key: ValueKey(widget.pedido.products.length),
+                        child: ProductSection(
+                          products: widget.pedido.products,
+                          onRemoveProduct: (index) {
+                            if (index >= 0 && index < widget.pedido.products.length) {
+                              widget.pedido.products.removeAt(index);
+                              widget.setStateCallback();
+                              widget.pedido.notifyListeners();
+                              widget.savePersistedData(widget.pedido);
+                            }
+                          },
+                          onAddProduct: () async {
+                            final selectedProduct = await showDialog<Map<String, dynamic>>(
+                              context: context,
+                              builder: (context) => ProductSelectionDialog(),
+                            );
+                            if (selectedProduct != null && mounted) {
         widget.setStateCallback();
         widget.pedido.products.add({
           'id': selectedProduct['id'],
