@@ -905,10 +905,8 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
       final storeId = StoreNormalize.getId(storeFinal);
       final normalizedStoreFinal = StoreNormalize.getName(storeId);
       final service = CriarPedidoService();
-      final billingCompany = {'Alline': '7', 'Cássio Vinicius': '78', 'Maria Eduarda': '77'}
-          .entries
-          .firstWhere((entry) => entry.key == currentPedido.selectedVendedor, orElse: () => MapEntry('', ''))
-          .value;
+      final String? vendedorId = userIds[currentPedido.selectedVendedor]?.toString();
+final String billingCompany = vendedorId ?? 'Site';
       final methodSlug = _paymentSlugFromLabel(currentPedido.selectedPaymentMethod);
       await logToFile('[_createOrder] Selecionado (label): ${currentPedido.selectedPaymentMethod} -> slug="$methodSlug"');
       final order = await service.createOrder(
@@ -1936,7 +1934,7 @@ SummarySection(
   isCouponValid: widget.pedido.isCouponValid,
   couponCode: widget.pedido.couponController.text,
   discountAmount: widget.pedido.discountAmount,
-  totalWithDiscount: totalWithDiscount,
+  shippingCost: widget.pedido.shippingCost, 
   isLoading: widget.isLoading,
   onCreateOrder: widget.createOrder,
   pedido: widget.pedido,

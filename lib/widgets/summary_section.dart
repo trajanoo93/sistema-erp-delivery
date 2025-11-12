@@ -11,7 +11,7 @@ class SummarySection extends StatefulWidget {
   final bool isCouponValid;
   final String couponCode;
   final double discountAmount;
-  final double totalWithDiscount;
+  final double shippingCost;
   final bool isLoading;
   final Future<void> Function() onCreateOrder;
   final PedidoState pedido;
@@ -24,7 +24,7 @@ class SummarySection extends StatefulWidget {
     required this.isCouponValid,
     required this.couponCode,
     required this.discountAmount,
-    required this.totalWithDiscount,
+    required this.shippingCost,
     required this.isLoading,
     required this.onCreateOrder,
     required this.pedido,
@@ -74,7 +74,7 @@ class _SummarySectionState extends State<SummarySection> {
       "message": formattedMessage.trim(),
     };
     final headers = {
-      "Token": "7343607cd11509da88407ea89353ebdd8a79bdf9c3152da4025274c08c370b7b90ab0b68307d28cf",
+      "Token": "7343607cd11509da88407ea89353ebdd8a79bdf9c3152da4025274c08c370b7b90ab0b68307d 28cf",
       "Content-Type": "application/json",
     };
 
@@ -122,6 +122,13 @@ class _SummarySectionState extends State<SummarySection> {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = const Color(0xFFF28C38);
     final successColor = Colors.green.shade600;
+
+    // RECALCULA O TOTAL EM TEMPO REAL
+    final double totalWithShipping = widget.totalOriginal + widget.shippingCost;
+    final double finalTotal = widget.isCouponValid
+        ? (totalWithShipping - widget.discountAmount)
+        : totalWithShipping;
+    final double finalTotalRounded = finalTotal < 0 ? 0.0 : double.parse(finalTotal.toStringAsFixed(2));
 
     String? paymentText;
     bool isPix = false;
@@ -179,23 +186,23 @@ class _SummarySectionState extends State<SummarySection> {
             primaryColor: primaryColor,
             icon: Icons.store,
             label: 'Loja Selecionada',
-            value: widget.pedido.storeFinal.isNotEmpty ? '📍 ${widget.pedido.storeFinal}' : 'Aguardando cálculo',
+            value: widget.pedido.storeFinal.isNotEmpty ? 'Loja: ${widget.pedido.storeFinal}' : 'Aguardando cálculo',
             isDarkMode: isDarkMode,
             valueStyle: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
           _buildSummaryRow(
-  context,
-  primaryColor: primaryColor,
-  label: 'Total dos Produtos',
-  value: 'R\$ ${widget.pedido.products.fold<double>(0.0, (sum, product) => sum + (product['price'] * (product['quantity'] ?? 1))).toStringAsFixed(2)}',
-  isDarkMode: isDarkMode,
-),
+            context,
+            primaryColor: primaryColor,
+            label: 'Total dos Produtos',
+            value: 'R\$ ${widget.totalOriginal.toStringAsFixed(2)}',
+            isDarkMode: isDarkMode,
+          ),
           _buildSummaryRow(
             context,
             primaryColor: primaryColor,
             label: 'Custo de Envio',
-            value: 'R\$ ${widget.pedido.shippingCost.toStringAsFixed(2)}',
+            value: 'R\$ ${widget.shippingCost.toStringAsFixed(2)}',
             isDarkMode: isDarkMode,
           ),
           if (widget.isCouponValid) ...[
@@ -211,17 +218,13 @@ class _SummarySectionState extends State<SummarySection> {
             ),
           ],
           const SizedBox(height: 12),
-          AnimatedOpacity(
-            opacity: widget.totalWithDiscount > 0 ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 500),
-            child: _buildSummaryRow(
-              context,
-              primaryColor: primaryColor,
-              label: 'Total com Desconto',
-              value: 'R\$ ${widget.totalWithDiscount.toStringAsFixed(2)}',
-              isDarkMode: isDarkMode,
-              valueStyle: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: primaryColor),
-            ),
+          _buildSummaryRow(
+            context,
+            primaryColor: primaryColor,
+            label: 'Total Final',
+            value: 'R\$ ${finalTotalRounded.toStringAsFixed(2)}',
+            isDarkMode: isDarkMode,
+            valueStyle: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: primaryColor),
           ),
           const SizedBox(height: 20),
           DropdownButtonFormField<String>(
