@@ -15,6 +15,7 @@ class SummarySection extends StatefulWidget {
   final bool isLoading;
   final Future<void> Function() onCreateOrder;
   final PedidoState pedido;
+  final Future<void> Function(PedidoState) savePersistedData; // NOVO
   final String? paymentInstructions;
   final String? resultMessage;
 
@@ -28,6 +29,7 @@ class SummarySection extends StatefulWidget {
     required this.isLoading,
     required this.onCreateOrder,
     required this.pedido,
+    required this.savePersistedData, // NOVO
     this.paymentInstructions,
     this.resultMessage,
   });
@@ -292,6 +294,7 @@ class _SummarySectionState extends State<SummarySection> {
               onTap: widget.isLoading || widget.pedido.selectedPaymentMethod.isEmpty
                   ? null
                   : () async {
+                      await widget.savePersistedData(widget.pedido);
                       await widget.onCreateOrder();
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(

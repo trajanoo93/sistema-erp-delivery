@@ -521,6 +521,7 @@ class _ShippingSectionState extends State<ShippingSection> {
                         if (parsed != null && parsed >= 0) {
                           widget.pedido.shippingCost = parsed;
                           widget.pedido.isShippingCostManuallyEdited = true;
+                          widget.pedido.notifyListeners();
                           widget.onShippingCostUpdated(parsed);
                           widget.savePersistedData?.call(widget.pedido);
                         }
@@ -531,6 +532,7 @@ class _ShippingSectionState extends State<ShippingSection> {
                         widget.pedido.shippingCostController.text = parsed.toStringAsFixed(2);
                         widget.pedido.shippingCost = parsed;
                         widget.pedido.isShippingCostManuallyEdited = true;
+                        widget.pedido.notifyListeners();
                         widget.onShippingCostUpdated(parsed);
                         widget.savePersistedData?.call(widget.pedido);
                       },

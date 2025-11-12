@@ -908,6 +908,8 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
       final String? vendedorId = userIds[currentPedido.selectedVendedor]?.toString();
 final String billingCompany = vendedorId ?? 'Site';
       final methodSlug = _paymentSlugFromLabel(currentPedido.selectedPaymentMethod);
+      final double finalShippingCost = currentPedido.shippingCost;
+      await logToFile('ENVIANDO shippingCost: $finalShippingCost');
       await logToFile('[_createOrder] Selecionado (label): ${currentPedido.selectedPaymentMethod} -> slug="$methodSlug"');
       final order = await service.createOrder(
         customerName: currentPedido.nameController.text,
@@ -924,7 +926,7 @@ final String billingCompany = vendedorId ?? 'Site';
         billingAddress2: currentPedido.complementController.text,
         billingNeighborhood: currentPedido.neighborhoodController.text,
         billingCity: currentPedido.cityController.text,
-        shippingCost: currentPedido.shippingCost,
+        shippingCost: finalShippingCost,
         paymentMethod: methodSlug,
         customerNotes: currentPedido.showNotesField ? currentPedido.notesController.text : '',
         schedulingDate: normalizedDate,
@@ -1574,6 +1576,7 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
                               setStateCallback: widget.setStateCallback,
                               savePersistedData: () => widget.savePersistedData(widget.pedido),
                               checkStoreByCep: widget.checkStoreByCep,
+                              
                               pedido: widget.pedido,
                               onReset: resetAddressSection,
                             ),
@@ -1654,6 +1657,7 @@ ShippingSection(
         widget.pedido.storeFinal = 'Central Distribuição (Sagrada Família)';
         widget.pedido.pickupStoreId = StoreNormalize.getId(widget.pedido.storeFinal);
         await widget.savePersistedData(widget.pedido);
+        await Future.delayed(Duration(milliseconds: 100));
       } else {
         final cleanCep = widget.pedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
         if (cleanCep.length == 8) {
@@ -1938,6 +1942,7 @@ SummarySection(
   isLoading: widget.isLoading,
   onCreateOrder: widget.createOrder,
   pedido: widget.pedido,
+  savePersistedData: widget.savePersistedData,
   paymentInstructions: widget.pedido.paymentInstructions,
   resultMessage: widget.resultMessage,
 ),
