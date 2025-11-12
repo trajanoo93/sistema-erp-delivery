@@ -21,6 +21,7 @@ import 'package:provider/provider.dart';
 import '../provider.dart';
 import '../globals.dart';
 
+
 // Garante sempre um intervalo "HH:mm - HH:mm" a partir de "HH:mm"
 String ensureTimeRange(String time) {
   final t = time.trim();
@@ -666,72 +667,7 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
       });
       await logToFile('Store decision response: status=${storeResponse.statusCode}, body=${storeResponse.body}');
       double shippingCost = 0.0;
-      if (storeResponse.statusCode == 200) {
-        final data = jsonDecode(storeResponse.body);
-        await logToFile('Parsed JSON: ${jsonEncode(data)}');
-        final newStoreFinal = data['effective_store_final']?.toString() ?? data['store_final']?.toString() ?? 'Central Distribuição (Sagrada Família)';
-        setState(() {
-          currentPedido.storeFinal = newStoreFinal;
-          currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(newStoreFinal);
-          final rawPaymentMethods = List<Map<String, dynamic>>.from(data['payment_methods'] ?? []);
-          currentPedido.availablePaymentMethods = rawPaymentMethods.map((m) => ({
-            'id': m['id']?.toString() ?? '',
-            'title': m['title']?.toString() ?? ''
-          })).toList();
-          final paymentAccounts = Map<String, dynamic>.from(data['payment_accounts'] ?? {'stripe': 'stripe', 'pagarme': 'central'});
-          currentPedido.paymentAccounts = paymentAccounts.map((key, value) => MapEntry(key, value.toString()));
-          if (currentPedido.selectedPaymentMethod.isNotEmpty &&
-              !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
-            currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
-                ? currentPedido.availablePaymentMethods.first['title'] ?? ''
-                : '';
-          }
-        });
-        await logToFile('Fetching shipping cost for CEP: $cep');
-        final costResponse = await http.get(
-          Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 10), onTimeout: () {
-          throw Exception('Timeout ao buscar custo de frete');
-        });
-        await logToFile('Shipping cost response: status=${costResponse.statusCode}, body=${costResponse.body}');
-        if (costResponse.statusCode == 200) {
-          final costData = jsonDecode(costResponse.body);
-          if (costData['status'] == 'success' && costData['shipping_options']?.isNotEmpty == true) {
-            shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
-            await logToFile('Shipping cost parsed: $shippingCost');
-          } else {
-            await logToFile('No valid shipping options for CEP: $cep');
-            shippingCost = 0.0;
-          }
-        } else {
-          throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode}');
-        }
-
-        // Só atualiza se NÃO foi editado manualmente
-        if (!currentPedido.isShippingCostManuallyEdited) {
-          setState(() {
-            currentPedido.shippingCost = shippingCost;
-            currentPedido.shippingCostController.text = shippingCost.toStringAsFixed(2);
-          });
-        }
-
-        await _savePersistedData(currentPedido);
-        await logToFile('Updated shipping cost: $shippingCost');
-        await prefs.setString(
-            cacheKey,
-            jsonEncode({
-              'store_final': currentPedido.storeFinal,
-              'pickup_store_id': currentPedido.pickupStoreId,
-              'shipping_cost': shippingCost,
-              'payment_methods': currentPedido.availablePaymentMethods,
-              'payment_accounts': currentPedido.paymentAccounts,
-            }));
-        await logToFile('Saved to cache: $cacheKey');
-      } else {
-        throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode}');
-      }
-    } catch (e) {
+          } catch (e) {
       await logToFile('Erro em _checkStoreByCep: $e');
       setState(() {
         currentPedido.storeFinal = 'Central Distribuição (Sagrada Família)';
@@ -763,256 +699,297 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
   }
 
   Future<void> _createOrder() async {
-    final currentPedido = _pedidos[_currentTabIndex];
-    final errors = <String>[];
-    final normalizedDate = normalizeYmd(currentPedido.schedulingDate);
-    final normalizedTime = ensureTimeRange(currentPedido.schedulingTime);
-    final phone = currentPedido.phoneController.text.replaceAll(RegExp(r'\D'), '').trim();
-    if (phone.length != 11) {
-      errors.add('Insira um número de telefone válido (11 dígitos com DDD)');
-      await logToFile('Erro de validação - Telefone: $phone, Cleaned: ${phone.replaceAll(RegExp(r'\D'), '')}, isPhoneValid: false');
-    }
-    if (currentPedido.nameController.text.isEmpty) errors.add('O nome do cliente é obrigatório');
-    if (currentPedido.shippingMethod == 'delivery' && currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').length != 8) {
-      errors.add('Digite um CEP válido (8 dígitos) para entrega');
-    }
-    if (currentPedido.shippingMethod == 'delivery' && currentPedido.addressController.text.isEmpty) {
-      errors.add('O endereço é obrigatório para entrega');
-    }
-    if (currentPedido.shippingMethod == 'delivery' && currentPedido.numberController.text.isEmpty) {
-      errors.add('O número do endereço é obrigatório para entrega');
-    }
-    if (currentPedido.shippingMethod == 'delivery' && currentPedido.neighborhoodController.text.isEmpty) {
-      errors.add('O bairro é obrigatório para entrega');
-    }
-    if (currentPedido.shippingMethod == 'delivery' && currentPedido.cityController.text.isEmpty) {
-      errors.add('A cidade é obrigatória para entrega');
-    }
-    if (currentPedido.shippingMethod == 'pickup' && currentPedido.pickupStoreId.isEmpty) {
-      errors.add('Selecione uma loja para retirada');
-    }
-    if (currentPedido.products.isEmpty) errors.add('Adicione pelo menos um produto ao pedido');
-    if (currentPedido.shippingMethod.isEmpty) errors.add('Selecione o método de entrega');
-    if (currentPedido.selectedPaymentMethod.isEmpty) errors.add('Selecione um método de pagamento');
-    if (normalizedDate.isEmpty || normalizedTime.isEmpty) errors.add('Selecione a data e o horário de entrega/retirada');
-    if (errors.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errors.join('\n')), duration: const Duration(seconds: 5)),
-      );
-      await logToFile('Erro de validação: ${errors.join(', ')}');
-      setState(() => _isLoading = false);
-      return;
-    }
-    setState(() => _isLoading = true);
-    String? savedPaymentInstructions;
-    try {
-      final cep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
-      final requestBody = {
-        'cep': cep,
-        'shipping_method': currentPedido.shippingMethod,
-        'pickup_store': currentPedido.shippingMethod == 'pickup' ? currentPedido.storeFinal : '',
-        'delivery_date': currentPedido.shippingMethod == 'delivery' ? normalizedDate : '',
-        'pickup_date': currentPedido.shippingMethod == 'pickup' ? normalizedDate : '',
-      };
-      await logToFile('Sending request to store-decision endpoint: ${jsonEncode(requestBody)}');
-      final storeResponse = await http.post(
-        Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(requestBody),
-      ).timeout(Duration(seconds: 15), onTimeout: () {
-        throw Exception('Timeout ao buscar opções de entrega');
-      });
-      await logToFile('Store decision response status: ${storeResponse.statusCode}, body: ${storeResponse.body}');
-      double shippingCost = 0.0;
-      if (currentPedido.shippingMethod == 'delivery') {
-        await logToFile('Fetching shipping cost for CEP: $cep');
-        final costResponse = await http.get(
-          Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(Duration(seconds: 15), onTimeout: () {
-          throw Exception('Timeout ao buscar custo de frete');
-        });
-        await logToFile('Shipping cost response status: ${costResponse.statusCode}, body: ${costResponse.body}');
-        if (costResponse.statusCode == 200) {
-          final costData = jsonDecode(costResponse.body);
-          if (costData['status'] == 'success' && costData['shipping_options'] != null && costData['shipping_options'].isNotEmpty) {
-            shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
-          } else {
-            await logToFile('Nenhuma opção de frete válida retornada para CEP: $cep');
-            shippingCost = 0.0;
-          }
-        } else {
-          throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode} - ${costResponse.body}');
-        }
-      }
-      if (storeResponse.statusCode == 200) {
-        final data = jsonDecode(storeResponse.body);
-        final newStoreFinal = data['effective_store_final']?.toString() ?? data['store_final']?.toString();
-        if (newStoreFinal == null) {
-          throw Exception('Nenhuma loja válida retornada pelo endpoint store-decision.');
-        }
-        setState(() {
-          currentPedido.storeFinal = newStoreFinal;
-          currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(newStoreFinal);
-          currentPedido.shippingCost = shippingCost;
-          currentPedido.shippingCostController.text = shippingCost.toStringAsFixed(2);
-          final rawPaymentMethods = List<Map>.from(data['payment_methods'] ?? []);
-          currentPedido.availablePaymentMethods = [];
-          final seenTitles = <String>{};
-          for (var m in rawPaymentMethods) {
-            final id = m['id']?.toString() ?? '';
-            final title = m['title']?.toString() ?? '';
-            if (id == 'woo_payment_on_delivery' && !seenTitles.contains('Dinheiro na Entrega')) {
-              currentPedido.availablePaymentMethods.add({'id': 'cod', 'title': 'Dinheiro na Entrega'});
-              seenTitles.add('Dinheiro na Entrega');
-            } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') && !seenTitles.contains('Cartão de Crédito On-line')) {
-              currentPedido.availablePaymentMethods.add({
-                'id': data['payment_accounts']['stripe'] ?? 'stripe',
-                'title': 'Cartão de Crédito On-line'
-              });
-              seenTitles.add('Cartão de Crédito On-line');
-            } else if (!seenTitles.contains(title)) {
-              currentPedido.availablePaymentMethods.add({'id': id, 'title': title});
-              seenTitles.add(title);
-            }
-          }
-          final paymentAccounts = data['payment_accounts'] as Map?;
-          currentPedido.paymentAccounts = paymentAccounts != null
-              ? paymentAccounts.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''))
-              : {
-                  'stripe': newStoreFinal == 'Unidade Barreiro' ? 'stripe_cc' : newStoreFinal == 'Unidade Sion' ? 'eh_stripe_pay' : 'stripe',
-                  'pagarme': newStoreFinal == 'Unidade Barreiro' ? 'barreiro' : newStoreFinal == 'Unidade Sion' ? 'sion' : 'central'
-                };
-          if (currentPedido.selectedPaymentMethod.isNotEmpty &&
-              !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
-            currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
-                ? currentPedido.availablePaymentMethods.first['title'] ?? ''
-                : '';
-          }
-        });
-        await _savePersistedData(currentPedido);
-      } else {
-        throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode} - ${storeResponse.body}');
-      }
-      if (currentPedido.shippingMethod == 'pickup') {
-        currentPedido.shippingCost = 0.0;
-        currentPedido.shippingCostController.text = '0.00';
-      }
-      await logToFile('[agendamento] date(raw)="${currentPedido.schedulingDate}" '
-          'time(raw)="${currentPedido.schedulingTime}" '
-          '-> date(norm)="$normalizedDate" time(norm)="$normalizedTime"');
-      final storeFinal = currentPedido.storeFinal.isEmpty ? 'Central Distribuição (Sagrada Família)' : currentPedido.storeFinal;
-      final storeId = StoreNormalize.getId(storeFinal);
-      final normalizedStoreFinal = StoreNormalize.getName(storeId);
-      final service = CriarPedidoService();
-      final String? vendedorId = userIds[currentPedido.selectedVendedor]?.toString();
-final String billingCompany = vendedorId ?? 'Site';
-      final methodSlug = _paymentSlugFromLabel(currentPedido.selectedPaymentMethod);
-      final double finalShippingCost = currentPedido.shippingCost;
-      await logToFile('ENVIANDO shippingCost: $finalShippingCost');
-      await logToFile('[_createOrder] Selecionado (label): ${currentPedido.selectedPaymentMethod} -> slug="$methodSlug"');
-      final order = await service.createOrder(
-        customerName: currentPedido.nameController.text,
-        customerEmail: 'orders@aogosto.com.br',
-        customerPhone: phone,
-        billingCompany: billingCompany,
-        products: currentPedido.products,
-        shippingMethod: currentPedido.shippingMethod,
-        storeFinal: normalizedStoreFinal,
-        pickupStoreId: storeId,
-        billingPostcode: cep,
-        billingAddress1: currentPedido.addressController.text,
-        billingNumber: currentPedido.numberController.text,
-        billingAddress2: currentPedido.complementController.text,
-        billingNeighborhood: currentPedido.neighborhoodController.text,
-        billingCity: currentPedido.cityController.text,
-        shippingCost: finalShippingCost,
-        paymentMethod: methodSlug,
-        customerNotes: currentPedido.showNotesField ? currentPedido.notesController.text : '',
-        schedulingDate: normalizedDate,
-        schedulingTime: normalizedTime,
-        couponCode: currentPedido.showCouponField ? currentPedido.couponController.text : '',
-        paymentAccountStripe: currentPedido.paymentAccounts['stripe'] ?? 'stripe',
-        paymentAccountPagarme: currentPedido.paymentAccounts['pagarme'] ?? 'central',
-      );
-      await logToFile('Order created: #${order['id']}, store: ${currentPedido.storeFinal}, payment: $methodSlug');
-      currentPedido.updateLastPhoneNumber(currentPedido.phoneController.text);
-      final isPix = (methodSlug == 'pagarme_custom_pix');
-      final isStripe = (methodSlug == currentPedido.paymentAccounts['stripe']);
-      String? savedPaymentInstructions;
-      if (isPix || isStripe) {
-        final totalBeforeDiscount = currentPedido.products.fold<double>(
-          0.0,
-          (sum, product) => sum + (product['price'] * (product['quantity'] ?? 1)),
-        ) + currentPedido.shippingCost;
-        final discountAmount = currentPedido.isCouponValid ? currentPedido.discountAmount : 0.0;
-        final totalAmount = totalBeforeDiscount - discountAmount;
-        final paymentLinkResult = await _generatePaymentLink(
-          customerName: currentPedido.nameController.text,
-          phoneNumber: currentPedido.phoneController.text,
-          amount: totalAmount,
-          storeUnit: normalizedStoreFinal,
-          paymentMethod: isPix ? 'Pix' : 'Stripe',
-          orderId: order['id'].toString(),
-        );
-        if (paymentLinkResult != null) {
-          savedPaymentInstructions = isPix
-              ? jsonEncode({
-                  'type': 'pix',
-                  'text': paymentLinkResult['text'] ?? ''
-                })
-              : jsonEncode({
-                  'type': 'stripe',
-                  'url': paymentLinkResult['url'] ?? ''
-                });
-          await logToFile('Payment instructions generated: $savedPaymentInstructions');
-        } else {
-          await logToFile('Erro: paymentLinkResult is null for payment method: $methodSlug');
-        }
-      }
-      if (mounted) {
-        setState(() {
-          _resultMessage = 'Pedido #${order['id']} criado com sucesso!${savedPaymentInstructions != null ? '\nInstruções de pagamento geradas.' : ''}';
-          currentPedido.paymentInstructions = savedPaymentInstructions;
-          currentPedido.resetControllers();
-          currentPedido.products.clear();
-          currentPedido.shippingMethod = '';
-          currentPedido.selectedPaymentMethod = '';
-          currentPedido.storeFinal = '';
-          currentPedido.pickupStoreId = '';
-          currentPedido.shippingCost = 0.0;
-          currentPedido.shippingCostController.text = '0.00';
-          currentPedido.showNotesField = false;
-          currentPedido.showCouponField = false;
-          currentPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-          currentPedido.schedulingTime = '09:00 - 12:00';
-          currentPedido.isCouponValid = false;
-          currentPedido.discountAmount = 0.0;
-          currentPedido.couponErrorMessage = null;
-          currentPedido.availablePaymentMethods = [];
-          currentPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
-        });
-        await _savePersistedData(currentPedido);
-      }
-    } catch (error, stackTrace) {
-      await logToFile('Erro ao criar pedido: $error, StackTrace: $stackTrace');
-      if (mounted) {
-        setState(() {
-          _resultMessage = 'Erro ao criar pedido: $error';
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        final tabState = context.findAncestorStateOfType<_KeepAliveTabState>();
-        if (tabState != null) {
-          tabState.resetAddressSection();
-        }
-        await _savePersistedData(currentPedido);
-      }
-    }
+  final currentPedido = _pedidos[_currentTabIndex];
+  final errors = <String>[];
+  final normalizedDate = normalizeYmd(currentPedido.schedulingDate);
+  final normalizedTime = ensureTimeRange(currentPedido.schedulingTime);
+  final phone = currentPedido.phoneController.text.replaceAll(RegExp(r'\D'), '').trim();
+
+  // === VALIDAÇÕES ===
+  if (phone.length != 11) {
+    errors.add('Insira um número de telefone válido (11 dígitos com DDD)');
+    await logToFile('Erro de validação - Telefone: $phone, Cleaned: ${phone.replaceAll(RegExp(r'\D'), '')}, isPhoneValid: false');
+  }
+  if (currentPedido.nameController.text.isEmpty) errors.add('O nome do cliente é obrigatório');
+  if (currentPedido.shippingMethod == 'delivery' && currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').length != 8) {
+    errors.add('Digite um CEP válido (8 dígitos) para entrega');
+  }
+  if (currentPedido.shippingMethod == 'delivery' && currentPedido.addressController.text.isEmpty) {
+    errors.add('O endereço é obrigatório para entrega');
+  }
+  if (currentPedido.shippingMethod == 'delivery' && currentPedido.numberController.text.isEmpty) {
+    errors.add('O número do endereço é obrigatório para entrega');
+  }
+  if (currentPedido.shippingMethod == 'delivery' && currentPedido.neighborhoodController.text.isEmpty) {
+    errors.add('O bairro é obrigatório para entrega');
+  }
+  if (currentPedido.shippingMethod == 'delivery' && currentPedido.cityController.text.isEmpty) {
+    errors.add('A cidade é obrigatória para entrega');
+  }
+  if (currentPedido.shippingMethod == 'pickup' && currentPedido.pickupStoreId.isEmpty) {
+    errors.add('Selecione uma loja para retirada');
+  }
+  if (currentPedido.products.isEmpty) errors.add('Adicione pelo menos um produto ao pedido');
+  if (currentPedido.shippingMethod.isEmpty) errors.add('Selecione o método de entrega');
+  if (currentPedido.selectedPaymentMethod.isEmpty) errors.add('Selecione um método de pagamento');
+  if (normalizedDate.isEmpty || normalizedTime.isEmpty) errors.add('Selecione a data e o horário de entrega/retirada');
+
+  if (errors.isNotEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(errors.join('\n')), duration: const Duration(seconds: 5)),
+    );
+    await logToFile('Erro de validação: ${errors.join(', ')}');
+    setState(() => _isLoading = false);
+    return;
   }
 
+  setState(() => _isLoading = true);
+  String? savedPaymentInstructions;
+
+  try {
+    final cep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
+    final requestBody = {
+      'cep': cep,
+      'shipping_method': currentPedido.shippingMethod,
+      'pickup_store': currentPedido.shippingMethod == 'pickup' ? currentPedido.storeFinal : '',
+      'delivery_date': currentPedido.shippingMethod == 'delivery' ? normalizedDate : '',
+      'pickup_date': currentPedido.shippingMethod == 'pickup' ? normalizedDate : '',
+    };
+
+    await logToFile('Sending request to store-decision endpoint: ${jsonEncode(requestBody)}');
+    final storeResponse = await http.post(
+      Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(requestBody),
+    ).timeout(const Duration(seconds: 15), onTimeout: () {
+      throw Exception('Timeout ao buscar opções de entrega');
+    });
+
+    await logToFile('Store decision response status: ${storeResponse.statusCode}, body: ${storeResponse.body}');
+
+   // === TAXA: USA O VALOR DO ESTADO (editado ou calculado) ===
+final double finalShippingCost = currentPedido.shippingCost;
+await logToFile('VALOR FINAL DA TAXA: $finalShippingCost (editado: ${currentPedido.isShippingCostManuallyEdited})');
+
+// === SÓ RECALCULA SE NÃO FOI EDITADO MANUALMENTE ===
+if (currentPedido.shippingMethod == 'delivery' && !currentPedido.isShippingCostManuallyEdited) {
+  await logToFile('Recalculando frete (não editado manualmente)');
+  final costResponse = await http.get(
+    Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
+    headers: {'Content-Type': 'application/json'},
+  ).timeout(const Duration(seconds: 15), onTimeout: () {
+    throw Exception('Timeout ao buscar custo de frete');
+  });
+
+  await logToFile('Shipping cost response status: ${costResponse.statusCode}, body: ${costResponse.body}');
+  if (costResponse.statusCode == 200) {
+    final costData = jsonDecode(costResponse.body);
+    if (costData['status'] == 'success' && costData['shipping_options']?.isNotEmpty == true) {
+      final newCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
+      currentPedido.shippingCost = newCost;
+      currentPedido.shippingCostController.text = newCost.toStringAsFixed(2);
+      await logToFile('Frete recalculado: $newCost');
+    } else {
+      await logToFile('Nenhuma opção de frete válida retornada para CEP: $cep');
+      currentPedido.shippingCost = 0.0;
+      currentPedido.shippingCostController.text = '0.00';
+    }
+  } else {
+    throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode} - ${costResponse.body}');
+  }
+} else {
+  await logToFile('Frete mantido (editado manualmente ou pickup): ${currentPedido.shippingCost}');
+}
+
+
+    // === ATUALIZA LOJA E MÉTODOS DE PAGAMENTO ===
+    if (storeResponse.statusCode == 200) {
+      final data = jsonDecode(storeResponse.body);
+      final newStoreFinal = data['effective_store_final']?.toString() ??
+          data['store_final']?.toString() ??
+          'Central Distribuição (Sagrada Família)';
+
+      setState(() {
+        currentPedido.storeFinal = newStoreFinal;
+        currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(newStoreFinal);
+
+        final rawPaymentMethods = List<Map>.from(data['payment_methods'] ?? []);
+        currentPedido.availablePaymentMethods = [];
+        final seenTitles = <String>{};
+
+        for (var m in rawPaymentMethods) {
+          final id = m['id']?.toString() ?? '';
+          final title = m['title']?.toString() ?? '';
+          if (id == 'woo_payment_on_delivery' && !seenTitles.contains('Dinheiro na Entrega')) {
+            currentPedido.availablePaymentMethods.add({'id': 'cod', 'title': 'Dinheiro na Entrega'});
+            seenTitles.add('Dinheiro na Entrega');
+          } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') &&
+              !seenTitles.contains('Cartão de Crédito On-line')) {
+            currentPedido.availablePaymentMethods.add({
+              'id': data['payment_accounts']['stripe'] ?? 'stripe',
+              'title': 'Cartão de Crédito On-line'
+            });
+            seenTitles.add('Cartão de Crédito On-line');
+          } else if (!seenTitles.contains(title)) {
+            currentPedido.availablePaymentMethods.add({'id': id, 'title': title});
+            seenTitles.add(title);
+          }
+        }
+
+        final paymentAccounts = data['payment_accounts'] as Map?;
+        currentPedido.paymentAccounts = paymentAccounts != null
+            ? paymentAccounts.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''))
+            : {
+                'stripe': newStoreFinal == 'Unidade Barreiro'
+                    ? 'stripe_cc'
+                    : newStoreFinal == 'Unidade Sion'
+                        ? 'eh_stripe_pay'
+                        : 'stripe',
+                'pagarme': newStoreFinal == 'Unidade Barreiro'
+                    ? 'barreiro'
+                    : newStoreFinal == 'Unidade Sion'
+                        ? 'sion'
+                        : 'central'
+              };
+
+        if (currentPedido.selectedPaymentMethod.isNotEmpty &&
+            !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
+          currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
+              ? currentPedido.availablePaymentMethods.first['title'] ?? ''
+              : '';
+        }
+      });
+
+      await _savePersistedData(currentPedido);
+    } else {
+      throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode} - ${storeResponse.body}');
+    }
+
+    // === PICKUP: FORÇA ZERAR TAXA ===
+if (currentPedido.shippingMethod == 'pickup') {
+  currentPedido.shippingCost = 0.0;
+  currentPedido.shippingCostController.text = '0.00';
+  await logToFile('Pickup: taxa zerada');
+}
+
+    await logToFile('[agendamento] date(raw)="${currentPedido.schedulingDate}" '
+        'time(raw)="${currentPedido.schedulingTime}" '
+        '-> date(norm)="$normalizedDate" time(norm)="$normalizedTime"');
+
+    final storeFinal = currentPedido.storeFinal.isEmpty ? 'Central Distribuição (Sagrada Família)' : currentPedido.storeFinal;
+    final storeId = StoreNormalize.getId(storeFinal);
+    final normalizedStoreFinal = StoreNormalize.getName(storeId);
+    final service = CriarPedidoService();
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+final String billingCompany = authProvider.userId?.toString() ?? '7'; 
+    final methodSlug = _paymentSlugFromLabel(currentPedido.selectedPaymentMethod);
+
+    // === VALOR FINAL DA TAXA (editado ou recalculado) ===
+   
+    await logToFile('ENVIANDO shippingCost: $finalShippingCost (isManuallyEdited: ${currentPedido.isShippingCostManuallyEdited})');
+
+    final order = await service.createOrder(
+      customerName: currentPedido.nameController.text,
+      customerEmail: 'orders@aogosto.com.br',
+      customerPhone: phone,
+      billingCompany: billingCompany,
+      products: currentPedido.products,
+      shippingMethod: currentPedido.shippingMethod,
+      storeFinal: normalizedStoreFinal,
+      pickupStoreId: storeId,
+      billingPostcode: cep,
+      billingAddress1: currentPedido.addressController.text,
+      billingNumber: currentPedido.numberController.text,
+      billingAddress2: currentPedido.complementController.text,
+      billingNeighborhood: currentPedido.neighborhoodController.text,
+      billingCity: currentPedido.cityController.text,
+      shippingCost: finalShippingCost,
+      paymentMethod: methodSlug,
+      customerNotes: currentPedido.showNotesField ? currentPedido.notesController.text : '',
+      schedulingDate: normalizedDate,
+      schedulingTime: normalizedTime,
+      couponCode: currentPedido.showCouponField ? currentPedido.couponController.text : '',
+      paymentAccountStripe: currentPedido.paymentAccounts['stripe'] ?? 'stripe',
+      paymentAccountPagarme: currentPedido.paymentAccounts['pagarme'] ?? 'central',
+    );
+
+    await logToFile('Order created: #${order['id']}, store: ${currentPedido.storeFinal}, payment: $methodSlug, shippingCost: $finalShippingCost');
+
+    currentPedido.updateLastPhoneNumber(currentPedido.phoneController.text);
+    final isPix = (methodSlug == 'pagarme_custom_pix');
+    final isStripe = (methodSlug == currentPedido.paymentAccounts['stripe']);
+    String? savedPaymentInstructions;
+
+    if (isPix || isStripe) {
+      final totalBeforeDiscount = currentPedido.products.fold<double>(
+        0.0,
+        (sum, product) => sum + (product['price'] * (product['quantity'] ?? 1)),
+      ) + currentPedido.shippingCost;
+      final discountAmount = currentPedido.isCouponValid ? currentPedido.discountAmount : 0.0;
+      final totalAmount = totalBeforeDiscount - discountAmount;
+
+      final paymentLinkResult = await _generatePaymentLink(
+        customerName: currentPedido.nameController.text,
+        phoneNumber: currentPedido.phoneController.text,
+        amount: totalAmount,
+        storeUnit: normalizedStoreFinal,
+        paymentMethod: isPix ? 'Pix' : 'Stripe',
+        orderId: order['id'].toString(),
+      );
+
+      if (paymentLinkResult != null) {
+        savedPaymentInstructions = isPix
+            ? jsonEncode({'type': 'pix', 'text': paymentLinkResult['text'] ?? ''})
+            : jsonEncode({'type': 'stripe', 'url': paymentLinkResult['url'] ?? ''});
+        await logToFile('Payment instructions generated: $savedPaymentInstructions');
+      } else {
+        await logToFile('Erro: paymentLinkResult is null for payment method: $methodSlug');
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _resultMessage = 'Pedido #${order['id']} criado com sucesso!${savedPaymentInstructions != null ? '\nInstruções de pagamento geradas.' : ''}';
+        currentPedido.paymentInstructions = savedPaymentInstructions;
+        currentPedido.resetControllers();
+        currentPedido.products.clear();
+        currentPedido.shippingMethod = '';
+        currentPedido.selectedPaymentMethod = '';
+        currentPedido.storeFinal = '';
+        currentPedido.pickupStoreId = '';
+        currentPedido.shippingCost = 0.0;
+        currentPedido.shippingCostController.text = '0.00';
+        currentPedido.showNotesField = false;
+        currentPedido.showCouponField = false;
+        currentPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+        currentPedido.schedulingTime = '09:00 - 12:00';
+        currentPedido.isCouponValid = false;
+        currentPedido.discountAmount = 0.0;
+        currentPedido.couponErrorMessage = null;
+        currentPedido.availablePaymentMethods = [];
+        currentPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+      });
+      await _savePersistedData(currentPedido);
+    }
+  } catch (error, stackTrace) {
+    await logToFile('Erro ao criar pedido: $error, StackTrace: $stackTrace');
+    if (mounted) {
+      setState(() {
+        _resultMessage = 'Erro ao criar pedido: $error';
+      });
+    }
+  } finally {
+    if (mounted) {
+      setState(() => _isLoading = false);
+      final tabState = context.findAncestorStateOfType<_KeepAliveTabState>();
+      if (tabState != null) {
+        tabState.resetAddressSection();
+      }
+      await _savePersistedData(currentPedido);
+    }
+  }
+}
   Future<void> _sendWhatsAppMessage(String phoneNumber, String message) async {
     final cleanPhone = phoneNumber.replaceAll(RegExp(r'\D'), '');
     final cleanMessage = message.trim();

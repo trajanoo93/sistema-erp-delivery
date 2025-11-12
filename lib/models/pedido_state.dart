@@ -39,6 +39,12 @@ class PedidoState with ChangeNotifier {
   bool isShippingSectionExpanded = true;
   String? paymentInstructions;
   String? couponErrorMessage;
+  double _originalShippingCost = 0.0;
+  double get originalShippingCost => _originalShippingCost;
+  set originalShippingCost(double value) {
+  _originalShippingCost = value;
+  notifyListeners(); // ESSENCIAL!
+}
   double discountAmount = 0.0;
   bool isCouponValid = false;
   Timer? debounce;
@@ -118,6 +124,7 @@ class PedidoState with ChangeNotifier {
     couponController.removeListener(_onCouponChanged);
     couponController.dispose();
     shippingCostController.dispose();
+    _originalShippingCost = 0.0;
 
     _initializeControllers();
     shippingCostController.text = shippingCost.toStringAsFixed(2);
