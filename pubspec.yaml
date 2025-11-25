@@ -11,30 +11,46 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_localizations: # 👈 necessário para traduzir DatePicker e demais widgets
+
+  # Localizações e UI
+  flutter_localizations:
     sdk: flutter
-  google_fonts: ^4.0.5
-  shared_preferences: ^2.2.3
-  http: ^1.2.1
-  intl: ^0.20.2
-  pdf: ^3.10.1
-  path_provider: ^2.0.15
-  provider: ^6.1.2
-  open_file: ^3.2.1
-  flutter_launcher_icons: ^0.14.3
+  google_fonts: ^6.2.1
   cupertino_icons: ^1.0.8
+
+  # Persistência e dados
+  shared_preferences: ^2.3.2
+  provider: ^6.1.2
+
+  # Firebase oficial (para Android, iOS e Web)
+  firebase_core: ^3.15.2
+  cloud_firestore: ^5.6.12
+
+  # === SUPORTE TOTAL AO WINDOWS DESKTOP ===
+  # Firedart: Cliente Firebase 100% Dart (funciona nativo no Windows/macOS/Linux)
+  firedart: ^0.9.8  # ← Versão corrigida (sugestão do Flutter)
+
+  # HTTP e PDF
+  http: ^1.2.2
+  intl: ^0.20.2
+  pdf: ^3.11.1
+  path_provider: ^2.1.4
+  open_file: ^3.5.9
+
+  # Gráficos e mapas
   fl_chart: ^0.68.0
+  flutter_svg: ^2.0.10
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  # flutter_map_tile_caching: ^13.0.0  # Descomente se quiser cache offline
+
+  # Utilitários
   mask_text_input_formatter: ^2.9.0
-  flutter_svg: ^2.0.9
-  # google_maps_flutter: ^2.5.0  # Remova se não for usado
-  geolocator: ^10.0.0
-  url_launcher: ^6.1.0
-  flutter_map: ^7.0.1  # Última versão estável
-  latlong2: ^0.9.0  # Para coordenadas
-  # flutter_map_tile_caching: ^13.0.0  # Opcional, para caching offline
+  geolocator: ^13.0.1
+  url_launcher: ^6.3.0
   qr_flutter: ^4.1.0
-  cached_network_image: ^3.3.1
-  connectivity_plus: ^6.0.5
+  cached_network_image: ^3.4.1
+  connectivity_plus: ^6.1.0
   retry: ^3.1.2
 
 dev_dependencies:
@@ -42,20 +58,21 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
 
+  # Ícones do app
+  flutter_launcher_icons: ^0.14.3
+
 flutter:
   uses-material-design: true
+
   assets:
     - assets/icon/go-icon.png
 
+# Configuração dos ícones (Android, iOS, macOS, Windows)
 flutter_launcher_icons:
-  android:
-    generate: true
-  ios:
-    generate: true
-  macos:
-    generate: true
-  windows:
-    generate: true
+  android: true
+  ios: true
+  macos: true
+  windows: true
   image_path: "assets/icon/go-icon.png"
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/icon/icon2.png"

@@ -1105,12 +1105,13 @@ final String billingCompany = authProvider.userId?.toString() ?? '7';
         }
       } else {
         final payloadStripe = {
-          'product_name': customerName,
-          'product_description': 'Produtos Ao Gosto Carnes',
-          'amount': amountInCents,
-          'phone_number': '($areaCode) $phone',
-          'metadata': {'order_id': orderId, 'unidade': normalizedStoreUnit},
-        };
+  'product_name': 'Pedido Ao Gosto #$orderId',
+  'amount': amountInCents,
+  'metadata': {
+    'order_id': orderId,                    // ← OBRIGATÓRIO e EXATAMENTE assim
+  },
+  'customer_email': 'orders@aogosto.com.br', // ajuda no Stripe Dashboard
+};
         await logToFile('Payload Stripe: ${jsonEncode(payloadStripe)}');
         final response = await http.post(
           Uri.parse(endpoint),

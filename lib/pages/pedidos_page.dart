@@ -1,11 +1,10 @@
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'pedido_detail_dialog.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' as mobile;
+import 'package:firedart/firestore/firestore.dart' as desktop;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'dart:async';
 
 class PedidosPage extends StatefulWidget {
   const PedidosPage({super.key});
@@ -15,50 +14,45 @@ class PedidosPage extends StatefulWidget {
 }
 
 class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin {
-  // DATA
-  List<dynamic> _allPedidos = [];
-  List<dynamic> _filteredPedidos = [];
+  List<Map<String, dynamic>> _allPedidos = [];
+  List<Map<String, dynamic>> _filteredPedidos = [];
   String _searchText = '';
-  DateTime? _startDate;
-  DateTime? _endDate;
+  DateTime _startDate = DateTime.now();
+  DateTime _endDate = DateTime.now();
   final TextEditingController _startDateController = TextEditingController();
   final TextEditingController _endDateController = TextEditingController();
   String _selectedStatus = 'Todos';
-  String? _errorMessage;
   int _totalFilteredCount = 0;
-  int _maxDisplayPedidos = 200;
-  bool _isLoadingMore = false;
+  int _maxDisplayPedidos = 300;
+  bool _isInitialLoading = true;
+  String? _errorMessage;
+  late final dynamic firestore;
+  bool _isDesktop = false;
+  Timer? _pollingTimer;
+  StreamSubscription? _streamSubscription;
+  final ScrollController _headerScrollController = ScrollController();
+  final ScrollController _bodyScrollController = ScrollController();
 
-  // ANIMATION
-  late final AnimationController _animationController;
-  late final Animation<double> _fadeAnimation;
-  late final AnimationController _skeletonController;
-  late final Animation<double> _skeletonAnimation;
-
-  // SCROLL
-  final ScrollController _hScrollCtrl = ScrollController();
-
-  // PALETA
+  // Cores
   final Color primaryColor = const Color(0xFFF28C38);
-  final Color bgSoft = const Color(0xFFF7F8FA);
   final Color textPrimary = const Color(0xFF1F2937);
-  final Color textSecondary = const Color(0xFF6B7280);
   final Color borderColor = const Color(0xFFE5E7EB);
+  final Color surfaceColor = const Color(0xFFFAFAFA);
+  final Color cardColor = Colors.white;
 
-  // COLUNAS
-  static const double _cId = 110;
+  // Larguras das colunas
+  static const double _cId = 90;
   static const double _cHora = 100;
-  static const double _cNome = 160;
-  static const double _cBairro = 220;
-  static const double _cCd = 80;
-  static const double _cStatus = 100;
-  static const double _cEntrega = 100;
-  static const double _cData = 150;
-  static const double _cHoraAg = 140;
-  static const double _cEndPad = 48;
+  static const double _cNome = 170;
+  static const double _cBairro = 160;
+  static const double _cCd = 90;
+  static const double _cStatus = 130;
+  static const double _cEntrega = 110;
+  static const double _cData = 110;
+  static const double _cEndPad = 60;
 
   double get _tableWidth =>
-      _cId + _cHora + _cNome + _cBairro + _cCd + _cStatus + _cEntrega + _cData + _cHoraAg + _cEndPad;
+      _cId + _cHora + _cNome + _cBairro + _cCd + _cStatus + _cEntrega + _cData + _cEndPad;
 
   final List<String> _statusOptions = [
     'Todos',
@@ -66,222 +60,275 @@ class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin
     'Saiu pra Entrega',
     'Concluído',
     'Cancelado',
+    '-',
   ];
 
-  // API
-  final String _baseUrl = 'https://script.google.com/macros/s/AKfycbymsq-y46VtSRzpQcfKETBHhUukdVehvtN2_GzxhLL_d2ohpUGCyMxT_vyBN2OTUKjE/exec';
-  final Map<String, String> _cdActions = {
-    'Central': 'Read',
-    'CD Barreiro': 'ReadCDBarreiro',
-    'CD Sion': 'ReadCDSion',
-    'Agendados': 'ReadAgendados',
-  };
+  // FUNÇÃO CORRIGIDA: pega o CD corretamente em qualquer situação
+  String getCdName(Map<String, dynamic> pedido) {
+  final agendamentoCd = pedido['agendamento']?['cd']?.toString();
+  if (agendamentoCd != null && agendamentoCd.trim().isNotEmpty && agendamentoCd != '-') {
+    final trimmed = agendamentoCd.trim();
+    if (trimmed.contains('Sion')) return 'Sion';
+    if (trimmed.contains('Barreiro')) return 'Barreiro';
+    if (trimmed.contains('Central')) return 'Central';
+    return trimmed; // caso tenha algo diferente no futuro
+  }
+
+  final rootCd = pedido['cd']?.toString();
+  if (rootCd != null && rootCd.trim().isNotEmpty && rootCd != '-') {
+    final trimmed = rootCd.trim();
+    if (trimmed.contains('Sion')) return 'Sion';
+    if (trimmed.contains('Barreiro')) return 'Barreiro';
+    if (trimmed.contains('Central')) return 'Central';
+    return trimmed;
+  }
+
+  final loja = (pedido['loja_origem']?.toString() ?? '').toLowerCase();
+  if (loja.contains('sion')) return 'Sion';
+  if (loja.contains('barreiro')) return 'Barreiro';
+  if (loja.contains('central')) return 'Central';
+
+  return 'Central'; // fallback
+}
+
+Color getCdColor(String cd) {
+  switch (cd) {
+    case 'Sion':
+      return Colors.purple.shade600;
+    case 'Barreiro':
+      return Colors.teal.shade600;
+    case 'Central':
+      return Colors.orange.shade700;
+    default:
+      return primaryColor;
+  }
+}
+String getNomeCurto(String? nomeCompleto) {
+    if (nomeCompleto == null || nomeCompleto.trim().isEmpty) return '-';
+
+    final partes = nomeCompleto.trim().split(RegExp(r'\s+'));
+    if (partes.length <= 1) return partes[0];
+
+    // Pega os dois primeiros nomes significativos (ignora "de", "da", "do", etc.)
+    final nomesLimpos = partes
+        .map((e) => e.toLowerCase())
+        .where((e) => !{'de', 'da', 'do', 'dos', 'das', 'e', 'di', 'del'}.contains(e))
+        .toList();
+
+    if (nomesLimpos.isEmpty) return partes.take(2).join(' ');
+    if (nomesLimpos.length == 1) return nomesLimpos[0];
+
+    return nomesLimpos.take(2).map((e) => e[0].toUpperCase() + e.substring(1)).join(' ');
+  }
+
+  DateTime _toDateTime(dynamic value) {
+    if (value == null) return DateTime.now();
+    if (value is mobile.Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) {
+      try {
+        return DateTime.parse(value);
+      } catch (_) {}
+    }
+    if (value is int) {
+      return DateTime.fromMillisecondsSinceEpoch(value);
+    }
+    try {
+      final typeName = value.runtimeType.toString();
+      if (typeName.contains('Timestamp')) {
+        final result = value.toDate();
+        if (result is DateTime) return result;
+      }
+    } catch (_) {}
+    return DateTime.now();
+  }
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
-    _fadeAnimation = CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic);
-    _skeletonController = AnimationController(
-      duration: const Duration(milliseconds: 1000),
-      vsync: this,
-    )..repeat(reverse: true);
-    _skeletonAnimation = Tween<double>(begin: 0.3, end: 0.6).animate(
-      CurvedAnimation(parent: _skeletonController, curve: Curves.easeInOut),
-    );
-
     final today = DateTime.now();
-    _startDate = DateTime(today.year, today.month, today.day, 0, 0, 0);
+    _startDate = DateTime(today.year, today.month, today.day);
     _endDate = DateTime(today.year, today.month, today.day, 23, 59, 59);
-    _startDateController.text = DateFormat('dd/MM/yyyy').format(_startDate!);
-    _endDateController.text = DateFormat('dd/MM/yyyy').format(_endDate!);
+    _startDateController.text = DateFormat('dd/MM/yyyy').format(_startDate);
+    _endDateController.text = DateFormat('dd/MM/yyyy').format(_endDate);
 
-    _animationController.forward();
+    _isDesktop = !kIsWeb &&
+        defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS &&
+        defaultTargetPlatform != TargetPlatform.macOS;
+
+    if (_isDesktop) {
+      try {
+        desktop.Firestore.initialize('ao-gosto-app-c0b31');
+      } catch (_) {}
+      firestore = desktop.Firestore.instance;
+      _loadPedidosDesktop();
+      _startPolling();
+    } else {
+      firestore = mobile.FirebaseFirestore.instance;
+      _initMobileStream();
+    }
+
+    _bodyScrollController.addListener(() {
+      if (_headerScrollController.hasClients) {
+        _headerScrollController.jumpTo(_bodyScrollController.offset);
+      }
+    });
+  }
+
+  void _initMobileStream() {
+    final stream = (firestore as mobile.FirebaseFirestore)
+        .collection('pedidos')
+        .orderBy('created_at', descending: true)
+        .snapshots();
+
+    _streamSubscription = stream.listen((snapshot) {
+      final List<Map<String, dynamic>> pedidos = snapshot.docs.map((doc) {
+        final Map<String, dynamic> data = doc.data();
+        return {'id_doc': doc.id, ...data};
+      }).toList();
+
+      setState(() {
+        _allPedidos = pedidos;
+        _filterPedidos();
+        _isInitialLoading = false;
+      });
+    }, onError: (e) {
+      setState(() {
+        _errorMessage = 'Erro ao carregar pedidos: $e';
+        _isInitialLoading = false;
+      });
+    });
+  }
+
+  Future<void> _loadPedidosDesktop() async {
+    try {
+      final collection = (firestore as desktop.Firestore).collection('pedidos');
+      final docs = await collection.orderBy('created_at', descending: true).get();
+
+      final List<Map<String, dynamic>> pedidos = docs.map((doc) {
+        final Map data = doc.map;
+        final String id = doc.id;
+        return {'id_doc': id, ...Map<String, dynamic>.from(data)};
+      }).toList();
+
+      setState(() {
+        _allPedidos = pedidos;
+        _filterPedidos();
+        _isInitialLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Erro ao carregar pedidos: $e';
+        _isInitialLoading = false;
+      });
+    }
+  }
+
+  void _startPolling() {
+    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) _loadPedidosDesktop();
+    });
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
-    _skeletonController.dispose();
-    _hScrollCtrl.dispose();
+    _pollingTimer?.cancel();
+    _streamSubscription?.cancel();
+    _headerScrollController.dispose();
+    _bodyScrollController.dispose();
     _startDateController.dispose();
     _endDateController.dispose();
-    _allPedidos.clear();
-    _filteredPedidos.clear();
     super.dispose();
   }
 
-  Stream<Map<String, dynamic>> _fetchPedidosStream({bool forceRefresh = false}) async* {
-    List<dynamic> combinedPedidos = [];
-    final prefs = await SharedPreferences.getInstance();
-    final todayKey = DateTime.now().toIso8601String().substring(0, 10);
-
-    // Tenta carregar do cache, a menos que seja refresh
-    if (!forceRefresh) {
-      final cachedData = prefs.getString('pedidos_$todayKey');
-      if (cachedData != null) {
-        combinedPedidos = jsonDecode(cachedData);
-        yield {'status': 'success', 'data': combinedPedidos, 'progress': 1.0, 'message': 'Dados carregados do cache'};
-      }
-    }
-
-    // Limpar cache antes de novo fetch
-    await prefs.remove('pedidos_$todayKey');
-
-    // Fetch paralelo
-    final futures = _cdActions.entries.map((entry) async {
-      final cdName = entry.key;
-      final action = entry.value;
-      final url = '$_baseUrl?action=$action';
-      try {
-        final response = await http.get(Uri.parse(url));
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          if (data is List) {
-            return data.map((p) => {...p, 'cd_origem': cdName}).toList();
-          } else if (data is Map<String, dynamic> && data['status'] == 'error') {
-            return {'error': 'Erro na API $cdName: ${data['message']}'};
-          }
-          return {'error': 'Formato inesperado da resposta para $cdName'};
-        }
-        return {'error': 'Erro ao carregar $cdName: ${response.statusCode}'};
-      } catch (e) {
-        return {'error': 'Erro de conexão em $cdName: $e'};
-      }
-    }).toList();
-
-    int completed = 0;
-    for (var future in await Future.wait(futures)) {
-      completed++;
-      if (future is List<dynamic>) {
-        combinedPedidos.addAll(future);
-      } else if (future is Map<String, dynamic> && future.containsKey('error')) {
-        yield {'status': 'error', 'message': future['error'], 'progress': completed / _cdActions.length};
-      }
-      yield {
-        'status': 'loading',
-        'data': combinedPedidos,
-        'progress': completed / _cdActions.length,
-        'message': 'Carregando ${_cdActions.keys.elementAt(completed - 1)}...'
-      };
-    }
-
-    // Salvar no cache
-    await prefs.setString('pedidos_$todayKey', jsonEncode(combinedPedidos));
-    yield {'status': 'success', 'data': combinedPedidos, 'progress': 1.0, 'message': 'Dados carregados'};
-  }
-
   void _filterPedidos() {
-    List<dynamic> temp = List.from(_allPedidos);
+    List<Map<String, dynamic>> temp = List.from(_allPedidos);
 
     if (_searchText.isNotEmpty) {
       final s = _searchText.toLowerCase();
       temp = temp.where((p) {
-        final idStr = (p['id'] ?? '').toString().toLowerCase();
-        final nome = (p['nome'] ?? '').toString().toLowerCase();
-        return idStr.contains(s) || nome.contains(s);
+        final id = (p['id'] ?? '').toString().toLowerCase();
+        final nome = (p['cliente']?['nome'] ?? '').toString().toLowerCase();
+        return id.contains(s) || nome.contains(s);
       }).toList();
     }
 
     temp = temp.where((p) {
-      final dataStr = p['data_agendamento']?.toString() ?? '';
-      if (dataStr.isEmpty) return false;
-      try {
-        final dt = DateTime.parse(dataStr);
-        if (_startDate != null && _endDate != null) {
-          return dt.isAfter(_startDate!.subtract(const Duration(seconds: 1))) &&
-              dt.isBefore(_endDate!.add(const Duration(seconds: 1)));
-        }
-        return true;
-      } catch (_) {
-        return false;
-      }
+      final date = _toDateTime(p['created_at']);
+      return date.isAfter(_startDate.subtract(const Duration(seconds: 1))) &&
+          date.isBefore(_endDate.add(const Duration(seconds: 1)));
     }).toList();
 
-    if (_selectedStatus != 'Todos') {
-      temp = temp.where((p) {
-        final st = (p['status'] ?? '').toString().trim().toLowerCase();
-        return st == _selectedStatus.toLowerCase();
-      }).toList();
+  if (_selectedStatus != 'Todos') {
+  temp = temp.where((p) {
+    final statusBanco = (p['status'] ?? '').toString().trim().toLowerCase();
+
+    switch (_selectedStatus) {
+      case 'Registrado':
+        return statusBanco == '' || 
+               statusBanco == '-' || 
+               statusBanco.contains('registrad');
+
+      case 'Saiu pra Entrega':
+        return statusBanco.contains('saiu') || 
+               statusBanco.contains('entrega');
+
+      case 'Concluído':
+        return statusBanco.contains('concluid') || 
+               statusBanco.contains('concluido');
+
+      case 'Cancelado':
+        return statusBanco.contains('cancel');
+
+      case '-':
+        return statusBanco == '' || statusBanco == '-';
+
+      default:
+        return statusBanco.contains(_selectedStatus.toLowerCase());
     }
-
-    _totalFilteredCount = temp.length; // Total real de pedidos filtrados
-    temp.sort((a, b) => _compareAgendamento(a, b));
-    _filteredPedidos = temp.take(_maxDisplayPedidos).toList();
-  }
-
-  void _loadMorePedidos() async {
-    setState(() {
-      _isLoadingMore = true;
-      _maxDisplayPedidos += 200;
-      _filterPedidos();
-      _isLoadingMore = false;
+  }).toList();
+}
+    temp.sort((a, b) {
+      final agA = a['agendamento']?['data'];
+      final agB = b['agendamento']?['data'];
+      if (agA != null && agB != null) {
+        return _toDateTime(agB).compareTo(_toDateTime(agA));
+      }
+      if (agA != null) return -1;
+      if (agB != null) return 1;
+      return _toDateTime(b['created_at']).compareTo(_toDateTime(a['created_at']));
     });
-  }
 
-  DateTime? _parseAgendamentoToDateTime(String dataAgendamento, String horarioAgendamento) {
-    try {
-      if (dataAgendamento.isEmpty || horarioAgendamento.isEmpty) return null;
-      final date = DateTime.parse(dataAgendamento);
-      final horarioParts = horarioAgendamento.split(' - ');
-      if (horarioParts.isEmpty || horarioParts[0].isEmpty) return null;
-      final time = DateFormat('HH:mm').parse(horarioParts[0].trim());
-      return DateTime(date.year, date.month, date.day, time.hour, time.minute);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  DateTime? _parseCriacaoToDateTime(String dataCriacao, String horarioCriacao) {
-    try {
-      if (dataCriacao.isEmpty) return null;
-      final date = DateFormat('dd-MM').parse(dataCriacao, true);
-      final dateWithYear = DateTime(DateTime.now().year, date.month, date.day);
-      if (horarioCriacao.isEmpty) return dateWithYear;
-      final time = DateFormat('HH:mm').parse(horarioCriacao);
-      return DateTime(dateWithYear.year, dateWithYear.month, dateWithYear.day, time.hour, time.minute);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  int _compareAgendamento(dynamic a, dynamic b) {
-    final daA = a['data_agendamento']?.toString() ?? '';
-    final haA = a['horario_agendamento']?.toString() ?? '';
-    final dA = a['data']?.toString() ?? '';
-    final hA = a['horario']?.toString() ?? '';
-
-    final daB = b['data_agendamento']?.toString() ?? '';
-    final haB = b['horario_agendamento']?.toString() ?? '';
-    final dB = b['data']?.toString() ?? '';
-    final hB = b['horario']?.toString() ?? '';
-
-    final agA = _parseAgendamentoToDateTime(daA, haA);
-    final agB = _parseAgendamentoToDateTime(daB, haB);
-
-    if (agA != null && agB != null) return agA.compareTo(agB);
-    if (agA != null) return -1;
-    if (agB != null) return 1;
-
-    final crA = _parseCriacaoToDateTime(dA, hA);
-    final crB = _parseCriacaoToDateTime(dB, hB);
-    if (crA == null && crB == null) return 0;
-    if (crA == null) return 1;
-    if (crB == null) return -1;
-    return crA.compareTo(crB);
+    _totalFilteredCount = temp.length;
+    _filteredPedidos = temp.take(_maxDisplayPedidos).toList();
+    setState(() {});
   }
 
   Future<void> _pickStartDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _startDate ?? DateTime.now(),
+      initialDate: _startDate,
       firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: primaryColor,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: textPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
       setState(() {
-        _startDate = DateTime(picked.year, picked.month, picked.day, 0, 0, 0);
-        _startDateController.text = DateFormat('dd/MM/yyyy').format(_startDate!);
+        _startDate = DateTime(picked.year, picked.month, picked.day);
+        _startDateController.text = DateFormat('dd/MM/yyyy').format(_startDate);
         _filterPedidos();
       });
     }
@@ -290,185 +337,359 @@ class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin
   Future<void> _pickEndDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _endDate ?? DateTime.now(),
+      initialDate: _endDate,
       firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: primaryColor,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: textPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
       setState(() {
         _endDate = DateTime(picked.year, picked.month, picked.day, 23, 59, 59);
-        _endDateController.text = DateFormat('dd/MM/yyyy').format(_endDate!);
+        _endDateController.text = DateFormat('dd/MM/yyyy').format(_endDate);
         _filterPedidos();
       });
     }
   }
 
-  String _formatHorario(String raw) {
-    final reg = RegExp(r'(\d{2}):(\d{2}):(\d{2})');
-    final m = reg.firstMatch(raw);
-    if (m != null) return '${m.group(1)}:${m.group(2)}';
-    return raw;
+  String _formatHorario(String? h) => h != null && h.length >= 5 ? h.substring(0, 5) : '-';
+  String _formatDataAgendamento(dynamic ts) => ts == null ? '-' : DateFormat('dd/MM/yyyy').format(_toDateTime(ts));
+  String _getJanela(dynamic ag) => ag?['janela_texto']?.toString() ?? '-';
+
+  List<Map<String, String>> parseProdutos(String raw) {
+    final list = <Map<String, String>>[];
+    if (raw.trim().isEmpty) return list;
+    final items = raw.split('*').where((e) => e.trim().isNotEmpty);
+    for (var item in items) {
+      final match = RegExp(r'\(Qtd:\s*(\d+)\)').firstMatch(item);
+      final nome = match != null ? item.split('(Qtd:')[0].trim() : item.trim();
+      final qtd = match?.group(1) ?? '1';
+      list.add({'nome': nome, 'qtd': qtd});
+    }
+    return list;
   }
 
-  String _formatDataAgendamento(String iso) {
-    if (iso.isEmpty) return '';
-    final dt = DateTime.tryParse(iso);
-    return dt == null ? iso : DateFormat('dd/MM/yyyy').format(dt);
+  Color _getStatusColor(String status) {
+    if (status.contains('Concluído') || status.contains('Concluido')) return Colors.green;
+    if (status.contains('Cancelado')) return Colors.red;
+    if (status.contains('Saiu')) return Colors.blue;
+    return Colors.orange;
   }
 
-  // UI
+  IconData _getStatusIcon(String status) {
+    if (status.contains('Concluído') || status.contains('Concluido')) return Icons.check_circle;
+    if (status.contains('Cancelado')) return Icons.cancel;
+    if (status.contains('Saiu')) return Icons.local_shipping;
+    return Icons.schedule;
+  }
+
+  void _showPedidoDetail(Map<String, dynamic> pedido) {
+    final produtos = parseProdutos(pedido['lista_produtos_texto']?.toString() ?? '');
+    final status = pedido['status']?.toString() ?? '-';
+    final cdName = getCdName(pedido);
+
+    String formatarTelefone(String? tel) {
+      if (tel == null || tel.isEmpty) return '-';
+      String numeros = tel.replaceAll(RegExp(r'\D'), '');
+      if (numeros.startsWith('55') && numeros.length >= 12) {
+        numeros = numeros.substring(2);
+      }
+      if (numeros.length == 11) {
+        return '(${numeros.substring(0, 2)}) ${numeros.substring(2, 7)}-${numeros.substring(7)}';
+      } else if (numeros.length == 10) {
+        return '(${numeros.substring(0, 2)}) ${numeros.substring(2, 6)}-${numeros.substring(6)}';
+      }
+      return tel;
+    }
+
+    final telefoneFormatado = formatarTelefone(pedido['cliente']?['telefone']?.toString());
+    final agendamento = pedido['agendamento'];
+    final temAgendamento = agendamento != null && agendamento['data'] != null;
+    final dataAgendamento = temAgendamento ? _formatDataAgendamento(agendamento['data']) : '-';
+    final janelaTexto = agendamento?['janela_texto']?.toString() ?? '-';
+    final entregador = pedido['entregador']?.toString();
+    final lojaOrigem = pedido['loja_origem']?.toString();
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        elevation: 8,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 680),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // HEADER
+              Container(
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [primaryColor, primaryColor.withOpacity(0.8)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(16)),
+                      child: const Icon(Icons.receipt_long, color: Colors.white, size: 32),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Pedido #${pedido['id'] ?? '-'}',
+                              style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(_getStatusIcon(status), color: Colors.white.withOpacity(0.9), size: 16),
+                              const SizedBox(width: 6),
+                              Text(status,
+                                  style: GoogleFonts.poppins(fontSize: 14, color: Colors.white.withOpacity(0.9), fontWeight: FontWeight.w500)),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                      style: IconButton.styleFrom(backgroundColor: Colors.white.withOpacity(0.2)),
+                    ),
+                  ],
+                ),
+              ),
+
+              // CONTEÚDO
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildModernDetailSection('Cliente', Icons.person, [
+                        _buildModernDetailRow('Nome', pedido['cliente']?['nome']),
+                        _buildModernDetailRow('Telefone', telefoneFormatado),
+                      ]),
+                      const SizedBox(height: 24),
+                      _buildModernDetailSection('Endereço de Entrega', Icons.location_on, [
+                        _buildModernDetailRow('Logradouro', pedido['endereco']?['rua'] ?? pedido['endereco']?['logradouro']),
+                        _buildModernDetailRow('Número', pedido['endereco']?['numero']),
+                        _buildModernDetailRow('Bairro', pedido['endereco']?['bairro']),
+                        if (pedido['endereco']?['complemento']?.toString().isNotEmpty == true)
+                          _buildModernDetailRow('Complemento', pedido['endereco']?['complemento']),
+                        if (pedido['endereco']?['cep'] != null) _buildModernDetailRow('CEP', pedido['endereco']?['cep']),
+                      ]),
+                      const SizedBox(height: 24),
+                      _buildModernDetailSection('Agendamento e Entrega', Icons.schedule, [
+                        _buildModernDetailRow('Tipo de Entrega', pedido['tipo_entrega'] == 'delivery' ? 'Delivery' : 'Retirada'),
+                        _buildModernDetailRow('Data do Pedido', _formatDataAgendamento(pedido['created_at'])),
+                        _buildModernDetailRow('Horário do Pedido', _formatHorario(pedido['horario_pedido']?.toString())),
+                        _buildModernDetailRow('Agendado para', dataAgendamento),
+                        if (temAgendamento) _buildModernDetailRow('Janela de Entrega', janelaTexto),
+                        _buildModernDetailRow('CD', cdName), // CORRIGIDO
+                        if (entregador != null && entregador != '-' && entregador.isNotEmpty)
+                          _buildModernDetailRow('Entregador', entregador),
+                        if (lojaOrigem != null && lojaOrigem.isNotEmpty) _buildModernDetailRow('Loja Origem', lojaOrigem),
+                      ]),
+
+                      if (produtos.isNotEmpty) ...[
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                              child: Icon(Icons.shopping_bag, color: primaryColor, size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Text('Produtos', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary)),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          decoration: BoxDecoration(color: surfaceColor, borderRadius: BorderRadius.circular(16), border: Border.all(color: borderColor)),
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            padding: const EdgeInsets.all(16),
+                            itemCount: produtos.length,
+                            separatorBuilder: (_, __) => const Divider(height: 20),
+                            itemBuilder: (_, i) {
+                              final p = produtos[i];
+                              return Row(
+                                children: [
+                                  Container(
+                                    width: 50,
+                                    height: 50,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(colors: [primaryColor, primaryColor.withOpacity(0.7)]),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Center(
+                                        child: Text('${p['qtd']}x',
+                                            style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16))),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(child: Text(p['nome'] ?? '-', style: GoogleFonts.poppins(fontSize: 15, color: textPrimary))),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+
+                      if (pedido['pagamento'] != null) ...[
+                        const SizedBox(height: 24),
+                        _buildModernDetailSection('Pagamento', Icons.payment, [
+                          _buildModernDetailRow('Método', pedido['pagamento']?['metodo_principal']),
+                          _buildModernDetailRow('Valor Total', 'R\$ ${(pedido['pagamento']?['valor_total'] ?? 0).toStringAsFixed(2)}'),
+                          _buildModernDetailRow('Valor Líquido', 'R\$ ${(pedido['pagamento']?['valor_liquido'] ?? 0).toStringAsFixed(2)}'),
+                          if ((pedido['pagamento']?['taxa_entrega'] ?? 0) > 0)
+                            _buildModernDetailRow('Taxa de Entrega', 'R\$ ${(pedido['pagamento']?['taxa_entrega'] ?? 0).toStringAsFixed(2)}'),
+                        ]),
+                      ],
+
+                      if (pedido['observacao']?.toString().isNotEmpty == true) ...[
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                              child: Icon(Icons.note, color: primaryColor, size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Text('Observações', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary)),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(color: surfaceColor, borderRadius: BorderRadius.circular(16), border: Border.all(color: borderColor)),
+                          child: Text(pedido['observacao'].toString(),
+                              style: GoogleFonts.poppins(fontSize: 14, color: textPrimary, height: 1.5)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+              // RODAPÉ
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: surfaceColor,
+                  borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(24), bottomRight: Radius.circular(24)),
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: Text('Fechar', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernDetailSection(String title, IconData icon, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+              child: Icon(icon, color: primaryColor, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Text(title, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Container(
+          decoration: BoxDecoration(color: surfaceColor, borderRadius: BorderRadius.circular(16), border: Border.all(color: borderColor)),
+          padding: const EdgeInsets.all(20),
+          child: Column(children: children),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModernDetailRow(String label, dynamic value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text('$label:', style: GoogleFonts.poppins(fontWeight: FontWeight.w500, color: Colors.grey[600], fontSize: 14)),
+          ),
+          Expanded(
+            child: Text(value?.toString() ?? '-',
+                style: GoogleFonts.poppins(color: textPrimary, fontSize: 14, fontWeight: FontWeight.w500)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(),
-                  const SizedBox(height: 20),
-                  StreamBuilder<Map<String, dynamic>>(
-                    stream: _fetchPedidosStream(),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData || snapshot.data!['status'] == 'loading') {
-                        return Column(
-                          children: [
-                            _buildSkeletonFilterCard(),
-                            const SizedBox(height: 16),
-                            _buildSkeletonTable(),
-                            if (snapshot.hasData && snapshot.data!['status'] == 'loading')
-                              Padding(
-                                padding: const EdgeInsets.only(top: 20),
-                                child: Column(
-                                  children: [
-                                    LinearProgressIndicator(
-                                      value: snapshot.data!['progress'],
-                                      backgroundColor: primaryColor.withOpacity(0.2),
-                                      valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      snapshot.data!['message'],
-                                      style: GoogleFonts.poppins(fontSize: 14, color: textSecondary),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        );
-                      } else if (snapshot.hasError || snapshot.data!['status'] == 'error') {
-                        return _ErrorState(
-                          message: snapshot.hasError ? 'Erro: ${snapshot.error}' : snapshot.data!['message'],
-                          onRetry: () => setState(() {}),
-                          primaryColor: primaryColor,
-                        );
-                      }
-
-                      _allPedidos = snapshot.data!['data'] as List<dynamic>;
-                      _filterPedidos();
-                      return Column(
-                        children: [
-                          _buildFilterCard(),
-                          const SizedBox(height: 16),
-                          _buildTableHeader(),
-                        ],
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
+      backgroundColor: surfaceColor,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(32, 32, 32, 100),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(),
+              const SizedBox(height: 32),
+              if (_isInitialLoading)
+                _buildSkeletonLoader()
+              else if (_errorMessage != null)
+                _buildErrorState()
+              else ...[
+                _buildFilterCard(),
+                const SizedBox(height: 24),
+                _buildTableCard(),
+              ],
+            ],
           ),
-          SliverFillRemaining(
-            hasScrollBody: true,
-            child: AnimatedBuilder(
-              animation: _fadeAnimation,
-              builder: (context, _) {
-                return Opacity(
-                  opacity: _fadeAnimation.value,
-                  child: RefreshIndicator(
-                    color: primaryColor,
-                    onRefresh: () async => setState(() {}),
-                    child: _filteredPedidos.isEmpty
-                        ? _EmptyState(primaryColor: primaryColor)
-                        : Scrollbar(
-                            controller: _hScrollCtrl,
-                            thumbVisibility: true,
-                            child: SingleChildScrollView(
-                              controller: _hScrollCtrl,
-                              scrollDirection: Axis.horizontal,
-                              child: SizedBox(
-                                width: _tableWidth,
-                                child: Column(
-                                  children: [
-                                    Expanded(
-                                      child: ListView.separated(
-                                        padding: EdgeInsets.zero,
-                                        itemCount: _filteredPedidos.length,
-                                        separatorBuilder: (_, __) => Divider(height: 1, color: borderColor),
-                                        itemBuilder: (context, index) => _PedidoRow(
-                                          pedido: _filteredPedidos[index],
-                                          index: index,
-                                          primaryColor: primaryColor,
-                                          textPrimary: textPrimary,
-                                          onTap: () {
-                                            final produtosParsed = parseProdutos(
-                                                _filteredPedidos[index]['produtos']?.toString() ?? '');
-                                            showDialog(
-                                              context: context,
-                                              builder: (_) => PedidoDetailDialog(
-                                                pedido: _filteredPedidos[index],
-                                                produtosParsed: produtosParsed,
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ),
-                                    if (_filteredPedidos.length < _totalFilteredCount)
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 16),
-                                        child: ElevatedButton(
-                                          onPressed: _isLoadingMore ? null : _loadMorePedidos,
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: primaryColor,
-                                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                          ),
-                                          child: _isLoadingMore
-                                              ? const SizedBox(
-                                                  width: 24,
-                                                  height: 24,
-                                                  child: CircularProgressIndicator(
-                                                    color: Colors.white,
-                                                    strokeWidth: 2,
-                                                  ),
-                                                )
-                                              : Text(
-                                                  'Carregar Mais',
-                                                  style: GoogleFonts.poppins(
-                                                    color: Colors.white,
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -477,539 +698,402 @@ class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: primaryColor,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: primaryColor.withOpacity(0.3),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            gradient: LinearGradient(colors: [primaryColor, primaryColor.withOpacity(0.8)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: primaryColor.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4))],
           ),
-          child: Icon(Icons.list_alt, color: Colors.white, size: 26),
+          child: const Icon(Icons.list_alt, color: Colors.white, size: 32),
         ),
-        const SizedBox(width: 12),
-        Text(
-          'Lista de Pedidos',
-          style: GoogleFonts.poppins(
-            fontSize: 26,
-            fontWeight: FontWeight.w700,
-            color: textPrimary,
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Lista de Pedidos',
+                  style: GoogleFonts.poppins(fontSize: 28, fontWeight: FontWeight.bold, color: textPrimary, letterSpacing: -0.5)),
+              Text('Gerencie todos os pedidos em um só lugar', style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600])),
+            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _buildSkeletonFilterCard() {
-    return AnimatedBuilder(
-      animation: _skeletonAnimation,
-      builder: (context, _) {
-        return Opacity(
-          opacity: _skeletonAnimation.value,
-          child: Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            color: Colors.white,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Container(width: 220, height: 48, color: Colors.grey[300]),
-                  Container(width: 140, height: 48, color: Colors.grey[300]),
-                  Container(width: 140, height: 48, color: Colors.grey[300]),
-                  Container(width: 170, height: 48, color: Colors.grey[300]),
-                  Container(width: 100, height: 36, color: Colors.grey[300]),
-                ],
-              ),
-            ),
+  Widget _buildSkeletonLoader() {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(20), boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
+          ]),
+          child: Column(
+            children: [
+              Row(children: [Expanded(child: _buildSkeletonBox(height: 56)), const SizedBox(width: 12), _buildSkeletonBox(width: 150, height: 56), const SizedBox(width: 12), _buildSkeletonBox(width: 150, height: 56)]),
+              const SizedBox(height: 12),
+              Row(children: [_buildSkeletonBox(width: 180, height: 56), const SizedBox(width: 12), _buildSkeletonBox(width: 150, height: 56)]),
+            ],
           ),
-        );
-      },
+        ),
+        const SizedBox(height: 24),
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(20), boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
+          ]),
+          child: Column(children: List.generate(5, (i) => Padding(padding: const EdgeInsets.only(bottom: 16), child: _buildSkeletonBox(height: 60)))),
+        ),
+      ],
     );
   }
 
-  Widget _buildSkeletonTable() {
-    return AnimatedBuilder(
-      animation: _skeletonAnimation,
-      builder: (context, _) {
-        return Opacity(
-          opacity: _skeletonAnimation.value,
-          child: Column(
-            children: [
-              Container(
-                width: _tableWidth,
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: borderColor),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    Container(width: _cId, height: 16, color: Colors.grey[300]),
-                    Container(width: _cHora, height: 16, color: Colors.grey[300]),
-                    Container(width: _cNome, height: 16, color: Colors.grey[300]),
-                    Container(width: _cBairro, height: 16, color: Colors.grey[300]),
-                    Container(width: _cCd, height: 16, color: Colors.grey[300]),
-                    Container(width: _cStatus, height: 16, color: Colors.grey[300]),
-                    Container(width: _cEntrega, height: 16, color: Colors.grey[300]),
-                    Container(width: _cData, height: 16, color: Colors.grey[300]),
-                    Container(width: _cHoraAg, height: 16, color: Colors.grey[300]),
-                    const SizedBox(width: _cEndPad),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Column(
-                children: List.generate(5, (index) => Container(
-                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-                  child: Row(
-                    children: [
-                      Container(width: _cId, height: 28, color: Colors.grey[300]),
-                      Container(width: _cHora, height: 16, color: Colors.grey[300]),
-                      Container(width: _cNome, height: 16, color: Colors.grey[300]),
-                      Container(width: _cBairro, height: 16, color: Colors.grey[300]),
-                      Container(width: _cCd, height: 16, color: Colors.grey[300]),
-                      Container(width: _cStatus, height: 16, color: Colors.grey[300]),
-                      Container(width: _cEntrega, height: 16, color: Colors.grey[300]),
-                      Container(width: _cData, height: 16, color: Colors.grey[300]),
-                      Container(width: _cHoraAg, height: 16, color: Colors.grey[300]),
-                      Container(width: _cEndPad, height: 16, color: Colors.grey[300]),
-                    ],
-                  ),
-                )),
-              ),
-            ],
-          ),
-        );
-      },
+  Widget _buildSkeletonBox({double? width, double? height}) {
+    return Container(
+      width: width,
+      height: height ?? 20,
+      decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Container(
+      padding: const EdgeInsets.all(48),
+      decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(20), boxShadow: [
+        BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
+      ]),
+      child: Center(
+        child: Column(
+          children: [
+            Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.red[50], shape: BoxShape.circle), child: Icon(Icons.error_outline, size: 64, color: Colors.red[400])),
+            const SizedBox(height: 24),
+            Text('Erro ao carregar pedidos', style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.w600, color: textPrimary)),
+            const SizedBox(height: 8),
+            Text(_errorMessage!, style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]), textAlign: TextAlign.center),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildFilterCard() {
-    final String counterText = '$_totalFilteredCount Pedido${_totalFilteredCount != 1 ? 's' : ''}';
+    final counter = '$_totalFilteredCount Pedido${_totalFilteredCount != 1 ? 's' : ''}';
 
-    InputBorder outline() => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: primaryColor.withOpacity(0.5)),
-        );
-
-    return Card(
-      elevation: 4,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: primaryColor.withOpacity(0.3)),
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+        border: Border.all(color: primaryColor.withOpacity(0.1)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SizedBox(
-              width: 220,
-              child: TextField(
-                decoration: InputDecoration(
-                  labelText: 'Buscar ID ou Nome',
-                  prefixIcon: Icon(Icons.search, color: primaryColor),
-                  border: outline(),
-                  enabledBorder: outline(),
-                  focusedBorder: outline().copyWith(borderSide: BorderSide(color: primaryColor, width: 2)),
-                  filled: true,
-                  fillColor: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.filter_list, color: primaryColor, size: 24),
+              const SizedBox(width: 12),
+              Text('Filtros', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [primaryColor, primaryColor.withOpacity(0.8)]),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [BoxShadow(color: primaryColor.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))],
                 ),
-                onChanged: (v) {
-                  _searchText = v;
-                  setState(() => _filterPedidos());
-                },
+                child: Text(counter, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14)),
               ),
-            ),
-            SizedBox(
-              width: 140,
-              child: TextField(
-                controller: _startDateController,
-                readOnly: true,
-                decoration: InputDecoration(
-                  labelText: 'Data Inicial',
-                  prefixIcon: Icon(Icons.date_range, color: primaryColor),
-                  border: outline(),
-                  enabledBorder: outline(),
-                  focusedBorder: outline().copyWith(borderSide: BorderSide(color: primaryColor, width: 2)),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                onTap: _pickStartDate,
-              ),
-            ),
-            SizedBox(
-              width: 140,
-              child: TextField(
-                controller: _endDateController,
-                readOnly: true,
-                decoration: InputDecoration(
-                  labelText: 'Data Final',
-                  prefixIcon: Icon(Icons.date_range, color: primaryColor),
-                  border: outline(),
-                  enabledBorder: outline(),
-                  focusedBorder: outline().copyWith(borderSide: BorderSide(color: primaryColor, width: 2)),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                onTap: _pickEndDate,
-              ),
-            ),
-            SizedBox(
-              width: 170,
-              child: DropdownButtonFormField<String>(
-                value: _selectedStatus,
-                decoration: InputDecoration(
-                  labelText: 'Status',
-                  prefixIcon: Icon(Icons.filter_list, color: primaryColor),
-                  border: outline(),
-                  enabledBorder: outline(),
-                  focusedBorder: outline().copyWith(borderSide: BorderSide(color: primaryColor, width: 2)),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                items: _statusOptions
-                    .map((s) => DropdownMenuItem(value: s, child: Text(s, style: GoogleFonts.poppins(fontSize: 14))))
-                    .toList(),
-                onChanged: (v) {
-                  if (v == null) return;
-                  setState(() {
-                    _selectedStatus = v;
+            ],
+          ),
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              SizedBox(
+                width: 280,
+                child: TextField(
+                  decoration: InputDecoration(
+                    labelText: 'Buscar ID ou Nome do Cliente',
+                    labelStyle: GoogleFonts.poppins(fontSize: 14),
+                    prefixIcon: Icon(Icons.search, color: primaryColor),
+                    filled: true,
+                    fillColor: surfaceColor,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: borderColor)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: primaryColor, width: 2)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  ),
+                  onChanged: (v) {
+                    _searchText = v.trim();
                     _filterPedidos();
-                  });
-                },
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: primaryColor.withOpacity(0.3)),
-              ),
-              child: Text(
-                counterText,
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: primaryColor,
+                  },
                 ),
               ),
-            ),
-          ],
-        ),
+              SizedBox(
+                width: 170,
+                child: TextField(
+                  controller: _startDateController,
+                  readOnly: true,
+                  decoration: InputDecoration(
+                    labelText: 'Data Inicial',
+                    labelStyle: GoogleFonts.poppins(fontSize: 14),
+                    prefixIcon: Icon(Icons.calendar_today, color: primaryColor),
+                    filled: true,
+                    fillColor: surfaceColor,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: borderColor)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: primaryColor, width: 2)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  ),
+                  onTap: _pickStartDate,
+                ),
+              ),
+              SizedBox(
+                width: 170,
+                child: TextField(
+                  controller: _endDateController,
+                  readOnly: true,
+                  decoration: InputDecoration(
+                    labelText: 'Data Final',
+                    labelStyle: GoogleFonts.poppins(fontSize: 14),
+                    prefixIcon: Icon(Icons.calendar_today, color: primaryColor),
+                    filled: true,
+                    fillColor: surfaceColor,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: borderColor)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: primaryColor, width: 2)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  ),
+                  onTap: _pickEndDate,
+                ),
+              ),
+              SizedBox(
+                width: 200,
+                child: DropdownButtonFormField<String>(
+                  value: _selectedStatus,
+                  decoration: InputDecoration(
+                    labelText: 'Status do Pedido',
+                    labelStyle: GoogleFonts.poppins(fontSize: 14),
+                    prefixIcon: Icon(Icons.local_offer, color: primaryColor),
+                    filled: true,
+                    fillColor: surfaceColor,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: borderColor)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: primaryColor, width: 2)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  ),
+                  items: _statusOptions
+                      .map((s) => DropdownMenuItem(value: s, child: Text(s, style: GoogleFonts.poppins(fontSize: 14))))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) {
+                      setState(() {
+                        _selectedStatus = v;
+                        _filterPedidos();
+                      });
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildTableHeader() {
-    TextStyle headStyle = GoogleFonts.poppins(
-      fontWeight: FontWeight.w600,
-      fontSize: 13.5,
-      color: Colors.black87,
+  Widget _buildTableCard() {
+    if (_filteredPedidos.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(64),
+        decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(20), boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
+        ]),
+        child: Center(
+          child: Column(
+            children: [
+              Container(padding: const EdgeInsets.all(24), decoration: BoxDecoration(color: Colors.grey[100], shape: BoxShape.circle), child: Icon(Icons.inbox_outlined, size: 80, color: Colors.grey[400])),
+              const SizedBox(height: 24),
+              Text('Nenhum pedido encontrado', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+              const SizedBox(height: 8),
+              Text('Tente ajustar os filtros para ver mais resultados', style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500])),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(20), boxShadow: [
+        BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
+      ]),
+      child: Column(
+        children: [
+          // Header da tabela
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: surfaceColor,
+              borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+              border: Border(bottom: BorderSide(color: borderColor, width: 1.5)),
+            ),
+            child: SingleChildScrollView(
+              controller: _headerScrollController,
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                width: _tableWidth,
+                child: Row(
+                  children: [
+                    _buildTableHeaderCell('ID', _cId),
+                    _buildTableHeaderCell('Horário', _cHora),
+                    _buildTableHeaderCell('Cliente', _cNome),
+                    _buildTableHeaderCell('Bairro', _cBairro),
+                    _buildTableHeaderCell('CD', _cCd),
+                    _buildTableHeaderCell('Status', _cStatus),
+                    _buildTableHeaderCell('Entrega', _cEntrega),
+                    _buildTableHeaderCell('Data Ag.', _cData),
+                    const SizedBox(width: _cEndPad),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Corpo da tabela
+          Scrollbar(
+            controller: _bodyScrollController,
+            thumbVisibility: true,
+            child: SingleChildScrollView(
+              controller: _bodyScrollController,
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                width: _tableWidth,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _filteredPedidos.length,
+                  itemBuilder: (context, i) => _buildPedidoRow(pedido: _filteredPedidos[i], index: i),
+                ),
+              ),
+            ),
+          ),
+          // Botão Carregar Mais
+          if (_filteredPedidos.length < _totalFilteredCount)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: surfaceColor,
+                borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20)),
+                border: Border(top: BorderSide(color: borderColor)),
+              ),
+              child: Center(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _maxDisplayPedidos += 200;
+                      _filterPedidos();
+                    });
+                  },
+                  icon: const Icon(Icons.expand_more),
+                  label: Text('Carregar Mais ($_totalFilteredCount total)', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
+  }
 
-    Widget cell(String text, double w) => SizedBox(
-          width: w,
-          child: Text(text, style: headStyle, overflow: TextOverflow.ellipsis),
-        );
+  Widget _buildTableHeaderCell(String text, double width) {
+    return SizedBox(
+      width: width,
+      child: Text(text,
+          textAlign: TextAlign.center,
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 12.5, color: textPrimary.withOpacity(0.9), letterSpacing: 0.2)),
+    );
+  }
 
-    return SingleChildScrollView(
-      controller: _hScrollCtrl,
-      scrollDirection: Axis.horizontal,
+  Widget _buildPedidoRow({required Map<String, dynamic> pedido, required int index}) {
+    final id = pedido['id']?.toString() ?? '-';
+    final horario = _formatHorario(pedido['horario_pedido']?.toString());
+    final nomeCompleto = pedido['cliente']?['nome']?.toString();
+    final nome = getNomeCurto(nomeCompleto);
+    final bairro = pedido['endereco']?['bairro']?.toString() ?? '-';
+    final status = pedido['status']?.toString() ?? '-';
+    final tipo = pedido['tipo_entrega']?.toString() == 'delivery' ? 'Delivery' : 'Retirada';
+    final cdName = getCdName(pedido);
+    final dataAg = _formatDataAgendamento(pedido['agendamento']?['data']);
+    final statusColor = _getStatusColor(status);
+    final entregaColor = tipo == 'Delivery' ? Colors.green.shade600 : Colors.blue.shade600;
+    final cdColor = getCdColor(cdName);
+
+    return InkWell(
+      onTap: () => _showPedidoDetail(pedido),
+      hoverColor: primaryColor.withOpacity(0.06),
       child: Container(
-        width: _tableWidth,
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: borderColor),
-          borderRadius: BorderRadius.circular(12),
+          color: index % 2 == 0 ? Colors.white : surfaceColor,
+          border: Border(bottom: BorderSide(color: borderColor.withOpacity(0.6))),
         ),
         child: Row(
           children: [
-            cell('ID', _cId),
-            cell('Horário', _cHora),
-            cell('Nome', _cNome),
-            cell('Bairro', _cBairro),
-            cell('CD', _cCd),
-            cell('Status', _cStatus),
-            cell('Entrega', _cEntrega),
-            cell('Data Agend.', _cData),
-            cell('Horário Agend.', _cHoraAg),
-            const SizedBox(width: _cEndPad),
+            SizedBox(width: _cId, child: Center(child: _badgeId(id))),
+            SizedBox(width: _cHora, child: Text(horario, textAlign: TextAlign.center, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w500))),
+            SizedBox(width: _cNome, child: Text(nome, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600))),
+            SizedBox(width: _cBairro, child: Text(bairro, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 13.5))),
+            SizedBox(width: _cCd, child: Center(child: _badgeCompact(cdName, cdColor))),
+            SizedBox(width: _cStatus, child: Center(child: _badgeCompact(status, statusColor, icon: _getStatusIcon(status)))),
+            SizedBox(width: _cEntrega, child: Center(child: _badgeCompact(tipo, entregaColor, icon: tipo == 'Delivery' ? Icons.delivery_dining : Icons.store_mall_directory))),
+            SizedBox(width: _cData, child: Text(dataAg, textAlign: TextAlign.center, style: GoogleFonts.poppins(fontSize: 13.5))),
+            SizedBox(width: _cEndPad, child: Center(child: Icon(Icons.arrow_forward_ios_rounded, size: 17, color: primaryColor.withOpacity(0.7)))),
           ],
         ),
       ),
     );
   }
 
-  Widget _cdChip(String cd) {
-    Color c;
-    switch (cd) {
-      case 'Central':
-        c = primaryColor;
-        break;
-      case 'CD Barreiro':
-        c = Colors.green;
-        break;
-      case 'CD Sion':
-        c = Colors.blue;
-        break;
-      case 'Agendados':
-        c = Colors.teal;
-        break;
-      default:
-        c = Colors.grey;
-    }
+  Widget _badgeId(String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
       decoration: BoxDecoration(
-        color: c.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: c.withOpacity(0.3)),
+        gradient: LinearGradient(colors: [primaryColor, primaryColor.withOpacity(0.9)]),
+        borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(
-        cd,
-        style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600, color: c),
-      ),
+      child: Text(text,
+          textAlign: TextAlign.center,
+          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.5)),
     );
   }
 
-  Widget _statusChip(String status) {
-    Color c;
-    switch (status.toLowerCase()) {
-      case 'concluído':
-        c = Colors.green;
-        break;
-      case 'saiu pra entrega':
-        c = Colors.yellow.shade700;
-        break;
-      case 'cancelado':
-        c = Colors.red;
-        break;
-      default:
-        c = Colors.grey;
-    }
+  Widget _badgeCompact(String text, Color color, {IconData? icon}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+      constraints: const BoxConstraints(minWidth: 68),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: c.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: c.withOpacity(0.3)),
-      ),
-      child: Text(
-        status,
-        style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600, color: c),
-      ),
-    );
-  }
-
-  Widget _entregaChip(String tipoEntrega) {
-    Color c;
-    String label;
-    switch (tipoEntrega.toLowerCase()) {
-      case 'delivery':
-        c = Colors.green.shade600;
-        label = 'Delivery';
-        break;
-      case 'pickup':
-        c = Colors.blue.shade600;
-        label = 'Retirada';
-        break;
-      default:
-        c = Colors.grey.shade600;
-        label = 'Indefinido';
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-      decoration: BoxDecoration(
-        color: c.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: c.withOpacity(0.3)),
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.4), width: 1.2),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            tipoEntrega.toLowerCase() == 'delivery'
-                ? Icons.local_shipping
-                : tipoEntrega.toLowerCase() == 'pickup'
-                    ? Icons.person
-                    : Icons.help_outline,
-            size: 13.5,
-            color: c,
-          ),
-          const SizedBox(width: 2),
-          Text(
-            label,
-            style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600, color: c),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _idPill(String id) {
-    return Container(
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: primaryColor,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        id,
-        style: GoogleFonts.poppins(
-          color: Colors.white,
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  Widget _PedidoRow({
-    required dynamic pedido,
-    required int index,
-    required Color primaryColor,
-    required Color textPrimary,
-    required VoidCallback onTap,
-  }) {
-    final rawId = (pedido['id'] ?? '').toString();
-    final rawHorario = (pedido['horario'] ?? '').toString();
-    final nome = (pedido['nome'] ?? '').toString();
-    final bairro = (pedido['bairro'] ?? '').toString();
-    final status = (pedido['status'] ?? '').toString();
-    final tipoEntrega = (pedido['tipo_entrega'] ?? '').toString();
-    final rawDataAgend = (pedido['data_agendamento'] ?? '').toString();
-    final horarioAgend = (pedido['horario_agendamento'] ?? '').toString();
-    final cdOrigem = (pedido['cd_origem'] ?? 'Central').toString();
-
-    final horario = _formatHorario(rawHorario);
-    final dataAgendamento = _formatDataAgendamento(rawDataAgend);
-
-    return InkWell(
-      onTap: onTap,
-      hoverColor: primaryColor.withOpacity(0.04),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-        color: index % 2 == 0 ? Colors.white : primaryColor.withOpacity(0.02),
-        child: Row(
-          children: [
-            SizedBox(width: _cId, child: _idPill(rawId)),
-            const SizedBox(width: 12),
-            SizedBox(width: _cHora - 12, child: _cellText(horario)),
-            SizedBox(width: _cNome, child: _cellText(nome, ellipsis: true)),
-            SizedBox(width: _cBairro, child: _cellText(bairro, ellipsis: true)),
-            SizedBox(width: _cCd, child: _cdChip(cdOrigem)),
-            const SizedBox(width: 12),
-            SizedBox(width: _cStatus, child: _statusChip(status)),
-            const SizedBox(width: 12),
-            SizedBox(width: _cEntrega, child: _entregaChip(tipoEntrega)),
-            const SizedBox(width: 12),
-            SizedBox(width: _cData, child: _cellText(dataAgendamento)),
-            SizedBox(width: _cHoraAg, child: _cellText(horarioAgend)),
-            const SizedBox(width: _cEndPad, child: Icon(Icons.arrow_forward_ios, size: 14, color: Colors.black26)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _cellText(String text, {bool ellipsis = false}) {
-    return Text(
-      text,
-      maxLines: 1,
-      overflow: ellipsis ? TextOverflow.ellipsis : TextOverflow.visible,
-      style: GoogleFonts.poppins(fontSize: 13.5, color: textPrimary, fontWeight: FontWeight.w500),
-    );
-  }
-
-  List<Map<String, String>> parseProdutos(String produtosRaw) {
-    final List<Map<String, String>> produtos = [];
-    final List<String> items = produtosRaw.split('*\n').where((item) => item.trim().isNotEmpty).toList();
-
-    for (String item in items) {
-      final qtdMatch = RegExp(r'\(Qtd:\s*(\d+)\)').firstMatch(item);
-      if (qtdMatch != null) {
-        final qtd = qtdMatch.group(1)!;
-        final nome = item.split('(Qtd:')[0].trim();
-        produtos.add({'nome': nome, 'qtd': qtd});
-      }
-    }
-    return produtos;
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.primaryColor});
-  final Color primaryColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.inbox_outlined, color: Colors.grey[400], size: 64),
-          const SizedBox(height: 12),
-          Text(
-            'Nenhum pedido encontrado para o período selecionado.',
-            style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message, required this.onRetry, required this.primaryColor});
-  final String message;
-  final VoidCallback onRetry;
-  final Color primaryColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.error_outline, color: primaryColor, size: 48),
-          const SizedBox(height: 8),
-          Text(
-            'Algo deu errado',
-            style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87),
-          ),
-          const SizedBox(height: 6),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Text(
-              message,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextButton.icon(
-            onPressed: onRetry,
-            icon: Icon(Icons.refresh, color: primaryColor),
-            label: Text(
-              'Tentar novamente',
-              style: GoogleFonts.poppins(fontSize: 14, color: primaryColor),
-            ),
+          if (icon != null) ...[Icon(icon, size: 14, color: color), const SizedBox(width: 5)],
+          Flexible(
+            child: Text(text,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+                overflow: TextOverflow.ellipsis),
           ),
         ],
       ),
