@@ -1,4 +1,4 @@
-
+// lib/models/pedido_state.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -39,12 +39,15 @@ class PedidoState with ChangeNotifier {
   bool isShippingSectionExpanded = true;
   String? paymentInstructions;
   String? couponErrorMessage;
+  
+  // ✅ PROPRIEDADE PRIVADA COM GETTER E SETTER
   double _originalShippingCost = 0.0;
   double get originalShippingCost => _originalShippingCost;
   set originalShippingCost(double value) {
-  _originalShippingCost = value;
-  notifyListeners(); // ESSENCIAL!
-}
+    _originalShippingCost = value;
+    notifyListeners();
+  }
+  
   double discountAmount = 0.0;
   bool isCouponValid = false;
   Timer? debounce;
@@ -52,8 +55,8 @@ class PedidoState with ChangeNotifier {
   bool isFetchingStore = false;
   String? lastPhoneNumber;
   String lastCep = '';
-  List<Map<String, dynamic>> availablePaymentMethods = []; // Alterado para dynamic
-  Map<String, dynamic> paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'}; // Alterado para dynamic
+  List<Map<String, dynamic>> availablePaymentMethods = [];
+  Map<String, dynamic> paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
 
   final VoidCallback? onCouponValidated;
 
@@ -92,6 +95,8 @@ class PedidoState with ChangeNotifier {
     paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
     schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
     lastCep = '';
+    isShippingCostManuallyEdited = false;
+    _originalShippingCost = 0.0;
     notifyListeners();
   }
 
@@ -124,7 +129,6 @@ class PedidoState with ChangeNotifier {
     couponController.removeListener(_onCouponChanged);
     couponController.dispose();
     shippingCostController.dispose();
-    _originalShippingCost = 0.0;
 
     _initializeControllers();
     shippingCostController.text = shippingCost.toStringAsFixed(2);
@@ -133,6 +137,8 @@ class PedidoState with ChangeNotifier {
     availablePaymentMethods = [];
     paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
     lastCep = '';
+    isShippingCostManuallyEdited = false;
+    _originalShippingCost = 0.0;
     notifyListeners();
   }
 
@@ -224,6 +230,7 @@ class PedidoState with ChangeNotifier {
     });
   }
 
+  // ✅ SERIALIZAÇÃO ATUALIZADA COM AS NOVAS FLAGS
   Map<String, dynamic> toJson() {
     return {
       'phone': phoneController.text,
@@ -249,6 +256,8 @@ class PedidoState with ChangeNotifier {
       'showCouponField': showCouponField,
       'schedulingDate': schedulingDate,
       'schedulingTime': schedulingTime,
+      'isShippingCostManuallyEdited': isShippingCostManuallyEdited, // ✅ ADICIONADO
+      'originalShippingCost': _originalShippingCost, // ✅ ADICIONADO
       'isCustomerSectionExpanded': isCustomerSectionExpanded,
       'isAddressSectionExpanded': isAddressSectionExpanded,
       'isProductsSectionExpanded': isProductsSectionExpanded,
@@ -266,6 +275,7 @@ class PedidoState with ChangeNotifier {
     };
   }
 
+  // ✅ DESERIALIZAÇÃO ATUALIZADA COM AS NOVAS FLAGS
   factory PedidoState.fromJson(Map<String, dynamic> json) {
     final pedido = PedidoState(onCouponValidated: () {});
     pedido.phoneController.text = json['phone']?.toString() ?? '';
@@ -291,6 +301,8 @@ class PedidoState with ChangeNotifier {
     pedido.showCouponField = json['showCouponField'] as bool? ?? false;
     pedido.schedulingDate = json['schedulingDate']?.toString() ?? '';
     pedido.schedulingTime = json['schedulingTime']?.toString() ?? '';
+    pedido.isShippingCostManuallyEdited = json['isShippingCostManuallyEdited'] as bool? ?? false; // ✅ ADICIONADO
+    pedido._originalShippingCost = (json['originalShippingCost'] as num?)?.toDouble() ?? 0.0; // ✅ ADICIONADO
     pedido.isCustomerSectionExpanded = json['isCustomerSectionExpanded'] as bool? ?? true;
     pedido.isAddressSectionExpanded = json['isAddressSectionExpanded'] as bool? ?? true;
     pedido.isProductsSectionExpanded = json['isProductsSectionExpanded'] as bool? ?? true;

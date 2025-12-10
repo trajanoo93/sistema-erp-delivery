@@ -1,3 +1,4 @@
+// lib/widgets/address_section.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -116,6 +117,12 @@ class _AddressSectionState extends State<AddressSection> {
 
   Future<void> _fetchAddressFromCep(String cep) async {
     logToFile('Fetching address for CEP: $cep');
+
+    // ✅ RESET DA FLAG AO BUSCAR NOVO CEP
+    if (widget.pedido != null && widget.pedido!.lastCep != cep) {
+      widget.pedido!.isShippingCostManuallyEdited = false;
+      logToFile('CEP changed from ${widget.pedido!.lastCep} to $cep, resetting isShippingCostManuallyEdited');
+    }
 
     if (!await _isConnected()) {
       if (mounted) {
@@ -279,9 +286,11 @@ class _AddressSectionState extends State<AddressSection> {
       if (widget.pedido != null) {
         widget.pedido!.shippingCost = newCost;
         widget.pedido!.shippingCostController.text = newCost.toStringAsFixed(2);
+        // ✅ MARCAR COMO EDITADO MANUALMENTE
+        widget.pedido!.isShippingCostManuallyEdited = true;
       }
       widget.savePersistedData?.call();
-      logToFile('Shipping cost saved: $newCost');
+      logToFile('Shipping cost MANUALLY edited and saved: $newCost, isManuallyEdited=true');
     }
     setState(() {
       _isEditingShippingCost = false;

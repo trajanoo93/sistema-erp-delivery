@@ -217,6 +217,9 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
         await prefs.setDouble('shippingCost_$index', pedido.shippingCost);
         await prefs.setString('storeFinal_$index', pedido.storeFinal);
         await prefs.setString('pickupStoreId_$index', pedido.pickupStoreId);
+        // ✅ ADICIONADO: Persistir novas flags
+        await prefs.setBool('isShippingCostManuallyEdited_$index', pedido.isShippingCostManuallyEdited);
+        await prefs.setDouble('originalShippingCost_$index', pedido.originalShippingCost);
         await prefs.setBool('showNotesField_$index', pedido.showNotesField);
         await prefs.setBool('showCouponField_$index', pedido.showCouponField);
         await prefs.setString('schedulingDate_$index', pedido.schedulingDate);
@@ -229,7 +232,8 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
         await logToFile(
             'Saved persisted data for index $index: shippingMethod=${pedido.shippingMethod}, '
             'storeFinal=${pedido.storeFinal}, pickupStoreId=${pedido.pickupStoreId}, '
-            'shippingCost=${pedido.shippingCost}, products=${jsonEncode(pedido.products)}');
+            'shippingCost=${pedido.shippingCost}, products=${jsonEncode(pedido.products)}, '
+            'isShippingCostManuallyEdited=${pedido.isShippingCostManuallyEdited}');
       } else {
         await logToFile('Error: Invalid index $index for pedido in _savePersistedData');
       }
@@ -433,6 +437,8 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
       pedido.isProductsSectionExpanded = true;
       pedido.isShippingSectionExpanded = true;
       pedido.selectedVendedor = authProvider.userId != null ? users[authProvider.userId] ?? 'Alline' : 'Alline';
+      pedido.isShippingCostManuallyEdited = false;
+      pedido.originalShippingCost = 0.0;
       await logToFile('Initialized new pedido for index $index with default values, selectedVendedor=${pedido.selectedVendedor}');
       return;
     }
@@ -462,6 +468,9 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
         ? 0.0
         : (prefs.getDouble('shippingCost_$index') ?? 0.0);
     pedido.shippingCostController.text = pedido.shippingCost.toStringAsFixed(2);
+    // ✅ ADICIONADO: Carregar novas flags
+    pedido.isShippingCostManuallyEdited = prefs.getBool('isShippingCostManuallyEdited_$index') ?? false;
+    pedido.originalShippingCost = prefs.getDouble('originalShippingCost_$index') ?? 0.0;
     pedido.storeFinal = pedido.shippingMethod == 'pickup'
         ? (prefs.getString('storeFinal_$index') ?? 'Central Distribuição (Sagrada Família)')
         : (prefs.getString('storeFinal_$index') ?? '');
@@ -480,7 +489,8 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
     await logToFile(
         'Loaded persisted data for index $index: shippingMethod=${pedido.shippingMethod}, '
         'storeFinal=${pedido.storeFinal}, pickupStoreId=${pedido.pickupStoreId}, '
-        'shippingCost=${pedido.shippingCost}, selectedVendedor=${pedido.selectedVendedor}');
+        'shippingCost=${pedido.shippingCost}, selectedVendedor=${pedido.selectedVendedor}, '
+        'isShippingCostManuallyEdited=${pedido.isShippingCostManuallyEdited}');
   }
 
   Future<void> _addNewPedido() async {
@@ -666,8 +676,108 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
         throw Exception('Timeout ao buscar opções de entrega');
       });
       await logToFile('Store decision response: status=${storeResponse.statusCode}, body=${storeResponse.body}');
-      double shippingCost = 0.0;
-          } catch (e) {
+
+      if (storeResponse.statusCode == 200) {
+        final data = jsonDecode(storeResponse.body);
+        final newStoreFinal = data['effective_store_final']?.toString() ??
+            data['store_final']?.toString() ??
+            'Central Distribuição (Sagrada Família)';
+
+        // ✅ RECALCULA FRETE SÓ SE NÃO FOI EDITADO MANUALMENTE
+        double shippingCost = 0.0;
+        if (currentPedido.shippingMethod == 'delivery' && !currentPedido.isShippingCostManuallyEdited) {
+          await logToFile('Recalculando frete em _checkStoreByCep (não editado manualmente)');
+          final costResponse = await http.get(
+            Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
+            headers: {'Content-Type': 'application/json'},
+          ).timeout(const Duration(seconds: 10), onTimeout: () {
+            throw Exception('Timeout ao buscar custo de frete');
+          });
+
+          if (costResponse.statusCode == 200) {
+            final costData = jsonDecode(costResponse.body);
+            if (costData['status'] == 'success' && costData['shipping_options']?.isNotEmpty == true) {
+              shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
+              await logToFile('Frete recalculado em _checkStoreByCep: $shippingCost');
+            } else {
+              await logToFile('Nenhuma opção de frete válida retornada');
+            }
+          }
+        } else {
+          shippingCost = currentPedido.shippingCost;
+          await logToFile('Mantendo frete (editado=${currentPedido.isShippingCostManuallyEdited} ou pickup): $shippingCost');
+        }
+
+        // Guarda o log antes do setState
+        final logMessage = !currentPedido.isShippingCostManuallyEdited
+            ? 'Frete atualizado automaticamente em _checkStoreByCep: ${currentPedido.shippingMethod == 'pickup' ? 0.0 : shippingCost}'
+            : 'Frete mantido (editado manualmente) em _checkStoreByCep: ${currentPedido.shippingCost}';
+
+        setState(() {
+          currentPedido.storeFinal = newStoreFinal;
+          currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(newStoreFinal);
+
+          final rawPaymentMethods = List<Map>.from(data['payment_methods'] ?? []);
+          currentPedido.availablePaymentMethods = [];
+          final seenTitles = <String>{};
+
+          for (var m in rawPaymentMethods) {
+            final id = m['id']?.toString() ?? '';
+            final title = m['title']?.toString() ?? '';
+            if (id == 'woo_payment_on_delivery' && !seenTitles.contains('Dinheiro na Entrega')) {
+              currentPedido.availablePaymentMethods.add({'id': 'cod', 'title': 'Dinheiro na Entrega'});
+              seenTitles.add('Dinheiro na Entrega');
+            } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') &&
+                !seenTitles.contains('Cartão de Crédito On-line')) {
+              currentPedido.availablePaymentMethods.add({
+                'id': data['payment_accounts']['stripe'] ?? 'stripe',
+                'title': 'Cartão de Crédito On-line'
+              });
+              seenTitles.add('Cartão de Crédito On-line');
+            } else if (!seenTitles.contains(title)) {
+              currentPedido.availablePaymentMethods.add({'id': id, 'title': title});
+              seenTitles.add(title);
+            }
+          }
+
+          final paymentAccounts = data['payment_accounts'] as Map?;
+          currentPedido.paymentAccounts = paymentAccounts != null
+              ? paymentAccounts.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''))
+              : {
+                  'stripe': newStoreFinal == 'Unidade Barreiro'
+                      ? 'stripe_cc'
+                      : newStoreFinal == 'Unidade Sion'
+                          ? 'eh_stripe_pay'
+                          : 'stripe',
+                  'pagarme': newStoreFinal == 'Unidade Barreiro'
+                      ? 'barreiro'
+                      : newStoreFinal == 'Unidade Sion'
+                          ? 'sion'
+                          : 'central'
+                };
+
+          if (currentPedido.selectedPaymentMethod.isNotEmpty &&
+              !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
+            currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
+                ? currentPedido.availablePaymentMethods.first['title'] ?? ''
+                : '';
+          }
+
+          // ✅ SÓ ATUALIZA SE NÃO FOI EDITADO MANUALMENTE
+          if (!currentPedido.isShippingCostManuallyEdited) {
+            currentPedido.shippingCost = currentPedido.shippingMethod == 'pickup' ? 0.0 : shippingCost;
+            currentPedido.shippingCostController.text = currentPedido.shippingCost.toStringAsFixed(2);
+          }
+        });
+
+        // Log após setState (fora do contexto síncrono)
+        await logToFile(logMessage);
+
+        await _savePersistedData(currentPedido);
+      } else {
+        throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode} - ${storeResponse.body}');
+      }
+    } catch (e) {
       await logToFile('Erro em _checkStoreByCep: $e');
       setState(() {
         currentPedido.storeFinal = 'Central Distribuição (Sagrada Família)';
@@ -699,297 +809,296 @@ class _CriarPedidoPageState extends State<CriarPedidoPage> with TickerProviderSt
   }
 
   Future<void> _createOrder() async {
-  final currentPedido = _pedidos[_currentTabIndex];
-  final errors = <String>[];
-  final normalizedDate = normalizeYmd(currentPedido.schedulingDate);
-  final normalizedTime = ensureTimeRange(currentPedido.schedulingTime);
-  final phone = currentPedido.phoneController.text.replaceAll(RegExp(r'\D'), '').trim();
+    final currentPedido = _pedidos[_currentTabIndex];
+    final errors = <String>[];
+    final normalizedDate = normalizeYmd(currentPedido.schedulingDate);
+    final normalizedTime = ensureTimeRange(currentPedido.schedulingTime);
+    final phone = currentPedido.phoneController.text.replaceAll(RegExp(r'\D'), '').trim();
 
-  // === VALIDAÇÕES ===
-  if (phone.length != 11) {
-    errors.add('Insira um número de telefone válido (11 dígitos com DDD)');
-    await logToFile('Erro de validação - Telefone: $phone, Cleaned: ${phone.replaceAll(RegExp(r'\D'), '')}, isPhoneValid: false');
-  }
-  if (currentPedido.nameController.text.isEmpty) errors.add('O nome do cliente é obrigatório');
-  if (currentPedido.shippingMethod == 'delivery' && currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').length != 8) {
-    errors.add('Digite um CEP válido (8 dígitos) para entrega');
-  }
-  if (currentPedido.shippingMethod == 'delivery' && currentPedido.addressController.text.isEmpty) {
-    errors.add('O endereço é obrigatório para entrega');
-  }
-  if (currentPedido.shippingMethod == 'delivery' && currentPedido.numberController.text.isEmpty) {
-    errors.add('O número do endereço é obrigatório para entrega');
-  }
-  if (currentPedido.shippingMethod == 'delivery' && currentPedido.neighborhoodController.text.isEmpty) {
-    errors.add('O bairro é obrigatório para entrega');
-  }
-  if (currentPedido.shippingMethod == 'delivery' && currentPedido.cityController.text.isEmpty) {
-    errors.add('A cidade é obrigatória para entrega');
-  }
-  if (currentPedido.shippingMethod == 'pickup' && currentPedido.pickupStoreId.isEmpty) {
-    errors.add('Selecione uma loja para retirada');
-  }
-  if (currentPedido.products.isEmpty) errors.add('Adicione pelo menos um produto ao pedido');
-  if (currentPedido.shippingMethod.isEmpty) errors.add('Selecione o método de entrega');
-  if (currentPedido.selectedPaymentMethod.isEmpty) errors.add('Selecione um método de pagamento');
-  if (normalizedDate.isEmpty || normalizedTime.isEmpty) errors.add('Selecione a data e o horário de entrega/retirada');
-
-  if (errors.isNotEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(errors.join('\n')), duration: const Duration(seconds: 5)),
-    );
-    await logToFile('Erro de validação: ${errors.join(', ')}');
-    setState(() => _isLoading = false);
-    return;
-  }
-
-  setState(() => _isLoading = true);
-  String? savedPaymentInstructions;
-
-  try {
-    final cep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
-    final requestBody = {
-      'cep': cep,
-      'shipping_method': currentPedido.shippingMethod,
-      'pickup_store': currentPedido.shippingMethod == 'pickup' ? currentPedido.storeFinal : '',
-      'delivery_date': currentPedido.shippingMethod == 'delivery' ? normalizedDate : '',
-      'pickup_date': currentPedido.shippingMethod == 'pickup' ? normalizedDate : '',
-    };
-
-    await logToFile('Sending request to store-decision endpoint: ${jsonEncode(requestBody)}');
-    final storeResponse = await http.post(
-      Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(requestBody),
-    ).timeout(const Duration(seconds: 15), onTimeout: () {
-      throw Exception('Timeout ao buscar opções de entrega');
-    });
-
-    await logToFile('Store decision response status: ${storeResponse.statusCode}, body: ${storeResponse.body}');
-
-   // === TAXA: USA O VALOR DO ESTADO (editado ou calculado) ===
-final double finalShippingCost = currentPedido.shippingCost;
-await logToFile('VALOR FINAL DA TAXA: $finalShippingCost (editado: ${currentPedido.isShippingCostManuallyEdited})');
-
-// === SÓ RECALCULA SE NÃO FOI EDITADO MANUALMENTE ===
-if (currentPedido.shippingMethod == 'delivery' && !currentPedido.isShippingCostManuallyEdited) {
-  await logToFile('Recalculando frete (não editado manualmente)');
-  final costResponse = await http.get(
-    Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
-    headers: {'Content-Type': 'application/json'},
-  ).timeout(const Duration(seconds: 15), onTimeout: () {
-    throw Exception('Timeout ao buscar custo de frete');
-  });
-
-  await logToFile('Shipping cost response status: ${costResponse.statusCode}, body: ${costResponse.body}');
-  if (costResponse.statusCode == 200) {
-    final costData = jsonDecode(costResponse.body);
-    if (costData['status'] == 'success' && costData['shipping_options']?.isNotEmpty == true) {
-      final newCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
-      currentPedido.shippingCost = newCost;
-      currentPedido.shippingCostController.text = newCost.toStringAsFixed(2);
-      await logToFile('Frete recalculado: $newCost');
-    } else {
-      await logToFile('Nenhuma opção de frete válida retornada para CEP: $cep');
-      currentPedido.shippingCost = 0.0;
-      currentPedido.shippingCostController.text = '0.00';
+    // === VALIDAÇÕES ===
+    if (phone.length != 11) {
+      errors.add('Insira um número de telefone válido (11 dígitos com DDD)');
+      await logToFile('Erro de validação - Telefone: $phone, Cleaned: ${phone.replaceAll(RegExp(r'\D'), '')}, isPhoneValid: false');
     }
-  } else {
-    throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode} - ${costResponse.body}');
-  }
-} else {
-  await logToFile('Frete mantido (editado manualmente ou pickup): ${currentPedido.shippingCost}');
-}
+    if (currentPedido.nameController.text.isEmpty) errors.add('O nome do cliente é obrigatório');
+    if (currentPedido.shippingMethod == 'delivery' && currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').length != 8) {
+      errors.add('Digite um CEP válido (8 dígitos) para entrega');
+    }
+    if (currentPedido.shippingMethod == 'delivery' && currentPedido.addressController.text.isEmpty) {
+      errors.add('O endereço é obrigatório para entrega');
+    }
+    if (currentPedido.shippingMethod == 'delivery' && currentPedido.numberController.text.isEmpty) {
+      errors.add('O número do endereço é obrigatório para entrega');
+    }
+    if (currentPedido.shippingMethod == 'delivery' && currentPedido.neighborhoodController.text.isEmpty) {
+      errors.add('O bairro é obrigatório para entrega');
+    }
+    if (currentPedido.shippingMethod == 'delivery' && currentPedido.cityController.text.isEmpty) {
+      errors.add('A cidade é obrigatória para entrega');
+    }
+    if (currentPedido.shippingMethod == 'pickup' && currentPedido.pickupStoreId.isEmpty) {
+      errors.add('Selecione uma loja para retirada');
+    }
+    if (currentPedido.products.isEmpty) errors.add('Adicione pelo menos um produto ao pedido');
+    if (currentPedido.shippingMethod.isEmpty) errors.add('Selecione o método de entrega');
+    if (currentPedido.selectedPaymentMethod.isEmpty) errors.add('Selecione um método de pagamento');
+    if (normalizedDate.isEmpty || normalizedTime.isEmpty) errors.add('Selecione a data e o horário de entrega/retirada');
 
-
-    // === ATUALIZA LOJA E MÉTODOS DE PAGAMENTO ===
-    if (storeResponse.statusCode == 200) {
-      final data = jsonDecode(storeResponse.body);
-      final newStoreFinal = data['effective_store_final']?.toString() ??
-          data['store_final']?.toString() ??
-          'Central Distribuição (Sagrada Família)';
-
-      setState(() {
-        currentPedido.storeFinal = newStoreFinal;
-        currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(newStoreFinal);
-
-        final rawPaymentMethods = List<Map>.from(data['payment_methods'] ?? []);
-        currentPedido.availablePaymentMethods = [];
-        final seenTitles = <String>{};
-
-        for (var m in rawPaymentMethods) {
-          final id = m['id']?.toString() ?? '';
-          final title = m['title']?.toString() ?? '';
-          if (id == 'woo_payment_on_delivery' && !seenTitles.contains('Dinheiro na Entrega')) {
-            currentPedido.availablePaymentMethods.add({'id': 'cod', 'title': 'Dinheiro na Entrega'});
-            seenTitles.add('Dinheiro na Entrega');
-          } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') &&
-              !seenTitles.contains('Cartão de Crédito On-line')) {
-            currentPedido.availablePaymentMethods.add({
-              'id': data['payment_accounts']['stripe'] ?? 'stripe',
-              'title': 'Cartão de Crédito On-line'
-            });
-            seenTitles.add('Cartão de Crédito On-line');
-          } else if (!seenTitles.contains(title)) {
-            currentPedido.availablePaymentMethods.add({'id': id, 'title': title});
-            seenTitles.add(title);
-          }
-        }
-
-        final paymentAccounts = data['payment_accounts'] as Map?;
-        currentPedido.paymentAccounts = paymentAccounts != null
-            ? paymentAccounts.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''))
-            : {
-                'stripe': newStoreFinal == 'Unidade Barreiro'
-                    ? 'stripe_cc'
-                    : newStoreFinal == 'Unidade Sion'
-                        ? 'eh_stripe_pay'
-                        : 'stripe',
-                'pagarme': newStoreFinal == 'Unidade Barreiro'
-                    ? 'barreiro'
-                    : newStoreFinal == 'Unidade Sion'
-                        ? 'sion'
-                        : 'central'
-              };
-
-        if (currentPedido.selectedPaymentMethod.isNotEmpty &&
-            !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
-          currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
-              ? currentPedido.availablePaymentMethods.first['title'] ?? ''
-              : '';
-        }
-      });
-
-      await _savePersistedData(currentPedido);
-    } else {
-      throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode} - ${storeResponse.body}');
+    if (errors.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errors.join('\n')), duration: const Duration(seconds: 5)),
+      );
+      await logToFile('Erro de validação: ${errors.join(', ')}');
+      setState(() => _isLoading = false);
+      return;
     }
 
-    // === PICKUP: FORÇA ZERAR TAXA ===
-if (currentPedido.shippingMethod == 'pickup') {
-  currentPedido.shippingCost = 0.0;
-  currentPedido.shippingCostController.text = '0.00';
-  await logToFile('Pickup: taxa zerada');
-}
-
-    await logToFile('[agendamento] date(raw)="${currentPedido.schedulingDate}" '
-        'time(raw)="${currentPedido.schedulingTime}" '
-        '-> date(norm)="$normalizedDate" time(norm)="$normalizedTime"');
-
-    final storeFinal = currentPedido.storeFinal.isEmpty ? 'Central Distribuição (Sagrada Família)' : currentPedido.storeFinal;
-    final storeId = StoreNormalize.getId(storeFinal);
-    final normalizedStoreFinal = StoreNormalize.getName(storeId);
-    final service = CriarPedidoService();
-
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-final String billingCompany = authProvider.userId?.toString() ?? '7'; 
-    final methodSlug = _paymentSlugFromLabel(currentPedido.selectedPaymentMethod);
-
-    // === VALOR FINAL DA TAXA (editado ou recalculado) ===
-   
-    await logToFile('ENVIANDO shippingCost: $finalShippingCost (isManuallyEdited: ${currentPedido.isShippingCostManuallyEdited})');
-
-    final order = await service.createOrder(
-      customerName: currentPedido.nameController.text,
-      customerEmail: 'orders@aogosto.com.br',
-      customerPhone: phone,
-      billingCompany: billingCompany,
-      products: currentPedido.products,
-      shippingMethod: currentPedido.shippingMethod,
-      storeFinal: normalizedStoreFinal,
-      pickupStoreId: storeId,
-      billingPostcode: cep,
-      billingAddress1: currentPedido.addressController.text,
-      billingNumber: currentPedido.numberController.text,
-      billingAddress2: currentPedido.complementController.text,
-      billingNeighborhood: currentPedido.neighborhoodController.text,
-      billingCity: currentPedido.cityController.text,
-      shippingCost: finalShippingCost,
-      paymentMethod: methodSlug,
-      customerNotes: currentPedido.showNotesField ? currentPedido.notesController.text : '',
-      schedulingDate: normalizedDate,
-      schedulingTime: normalizedTime,
-      couponCode: currentPedido.showCouponField ? currentPedido.couponController.text : '',
-      paymentAccountStripe: currentPedido.paymentAccounts['stripe'] ?? 'stripe',
-      paymentAccountPagarme: currentPedido.paymentAccounts['pagarme'] ?? 'central',
-    );
-
-    await logToFile('Order created: #${order['id']}, store: ${currentPedido.storeFinal}, payment: $methodSlug, shippingCost: $finalShippingCost');
-
-    currentPedido.updateLastPhoneNumber(currentPedido.phoneController.text);
-    final isPix = (methodSlug == 'pagarme_custom_pix');
-    final isStripe = (methodSlug == currentPedido.paymentAccounts['stripe']);
+    setState(() => _isLoading = true);
     String? savedPaymentInstructions;
 
-    if (isPix || isStripe) {
-      final totalBeforeDiscount = currentPedido.products.fold<double>(
-        0.0,
-        (sum, product) => sum + (product['price'] * (product['quantity'] ?? 1)),
-      ) + currentPedido.shippingCost;
-      final discountAmount = currentPedido.isCouponValid ? currentPedido.discountAmount : 0.0;
-      final totalAmount = totalBeforeDiscount - discountAmount;
+    try {
+      final cep = currentPedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
+      final requestBody = {
+        'cep': cep,
+        'shipping_method': currentPedido.shippingMethod,
+        'pickup_store': currentPedido.shippingMethod == 'pickup' ? currentPedido.storeFinal : '',
+        'delivery_date': currentPedido.shippingMethod == 'delivery' ? normalizedDate : '',
+        'pickup_date': currentPedido.shippingMethod == 'pickup' ? normalizedDate : '',
+      };
 
-      final paymentLinkResult = await _generatePaymentLink(
-        customerName: currentPedido.nameController.text,
-        phoneNumber: currentPedido.phoneController.text,
-        amount: totalAmount,
-        storeUnit: normalizedStoreFinal,
-        paymentMethod: isPix ? 'Pix' : 'Stripe',
-        orderId: order['id'].toString(),
-      );
+      await logToFile('Sending request to store-decision endpoint: ${jsonEncode(requestBody)}');
+      final storeResponse = await http.post(
+        Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/store-decision'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(requestBody),
+      ).timeout(const Duration(seconds: 15), onTimeout: () {
+        throw Exception('Timeout ao buscar opções de entrega');
+      });
 
-      if (paymentLinkResult != null) {
-        savedPaymentInstructions = isPix
-            ? jsonEncode({'type': 'pix', 'text': paymentLinkResult['text'] ?? ''})
-            : jsonEncode({'type': 'stripe', 'url': paymentLinkResult['url'] ?? ''});
-        await logToFile('Payment instructions generated: $savedPaymentInstructions');
+      await logToFile('Store decision response status: ${storeResponse.statusCode}, body: ${storeResponse.body}');
+
+      // ✅ SÓ RECALCULA SE NÃO FOI EDITADO MANUALMENTE
+      if (currentPedido.shippingMethod == 'delivery' && !currentPedido.isShippingCostManuallyEdited) {
+        await logToFile('Recalculando frete antes de criar pedido (não editado manualmente)');
+        final costResponse = await http.get(
+          Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
+          headers: {'Content-Type': 'application/json'},
+        ).timeout(const Duration(seconds: 15), onTimeout: () {
+          throw Exception('Timeout ao buscar custo de frete');
+        });
+
+        await logToFile('Shipping cost response status: ${costResponse.statusCode}, body: ${costResponse.body}');
+        if (costResponse.statusCode == 200) {
+          final costData = jsonDecode(costResponse.body);
+          if (costData['status'] == 'success' && costData['shipping_options']?.isNotEmpty == true) {
+            final newCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
+            currentPedido.shippingCost = newCost;
+            currentPedido.shippingCostController.text = newCost.toStringAsFixed(2);
+            await logToFile('Frete recalculado antes de criar pedido: $newCost');
+          } else {
+            await logToFile('Nenhuma opção de frete válida retornada para CEP: $cep');
+            currentPedido.shippingCost = 0.0;
+            currentPedido.shippingCostController.text = '0.00';
+          }
+        } else {
+          throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode} - ${costResponse.body}');
+        }
       } else {
-        await logToFile('Erro: paymentLinkResult is null for payment method: $methodSlug');
+        await logToFile('Frete mantido (editado manualmente=${currentPedido.isShippingCostManuallyEdited} ou pickup): ${currentPedido.shippingCost}');
       }
-    }
 
-    if (mounted) {
-      setState(() {
-        _resultMessage = 'Pedido #${order['id']} criado com sucesso!${savedPaymentInstructions != null ? '\nInstruções de pagamento geradas.' : ''}';
-        currentPedido.paymentInstructions = savedPaymentInstructions;
-        currentPedido.resetControllers();
-        currentPedido.products.clear();
-        currentPedido.shippingMethod = '';
-        currentPedido.selectedPaymentMethod = '';
-        currentPedido.storeFinal = '';
-        currentPedido.pickupStoreId = '';
+      // === PICKUP: FORÇA ZERAR TAXA ===
+      if (currentPedido.shippingMethod == 'pickup') {
         currentPedido.shippingCost = 0.0;
         currentPedido.shippingCostController.text = '0.00';
-        currentPedido.showNotesField = false;
-        currentPedido.showCouponField = false;
-        currentPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-        currentPedido.schedulingTime = '09:00 - 12:00';
-        currentPedido.isCouponValid = false;
-        currentPedido.discountAmount = 0.0;
-        currentPedido.couponErrorMessage = null;
-        currentPedido.availablePaymentMethods = [];
-        currentPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
-      });
-      await _savePersistedData(currentPedido);
-    }
-  } catch (error, stackTrace) {
-    await logToFile('Erro ao criar pedido: $error, StackTrace: $stackTrace');
-    if (mounted) {
-      setState(() {
-        _resultMessage = 'Erro ao criar pedido: $error';
-      });
-    }
-  } finally {
-    if (mounted) {
-      setState(() => _isLoading = false);
-      final tabState = context.findAncestorStateOfType<_KeepAliveTabState>();
-      if (tabState != null) {
-        tabState.resetAddressSection();
+        await logToFile('Pickup: taxa zerada');
       }
-      await _savePersistedData(currentPedido);
+
+      // === VALOR FINAL SEMPRE DO ESTADO ===
+      final double finalShippingCost = currentPedido.shippingCost;
+      await logToFile('VALOR FINAL DA TAXA PARA PEDIDO: $finalShippingCost (editado: ${currentPedido.isShippingCostManuallyEdited})');
+
+      // === ATUALIZA LOJA E MÉTODOS DE PAGAMENTO ===
+      if (storeResponse.statusCode == 200) {
+        final data = jsonDecode(storeResponse.body);
+        final newStoreFinal = data['effective_store_final']?.toString() ??
+            data['store_final']?.toString() ??
+            'Central Distribuição (Sagrada Família)';
+
+        setState(() {
+          currentPedido.storeFinal = newStoreFinal;
+          currentPedido.pickupStoreId = data['pickup_store_id']?.toString() ?? StoreNormalize.getId(newStoreFinal);
+
+          final rawPaymentMethods = List<Map>.from(data['payment_methods'] ?? []);
+          currentPedido.availablePaymentMethods = [];
+          final seenTitles = <String>{};
+
+          for (var m in rawPaymentMethods) {
+            final id = m['id']?.toString() ?? '';
+            final title = m['title']?.toString() ?? '';
+            if (id == 'woo_payment_on_delivery' && !seenTitles.contains('Dinheiro na Entrega')) {
+              currentPedido.availablePaymentMethods.add({'id': 'cod', 'title': 'Dinheiro na Entrega'});
+              seenTitles.add('Dinheiro na Entrega');
+            } else if ((id == 'stripe' || id == 'stripe_cc' || id == 'eh_stripe_pay') &&
+                !seenTitles.contains('Cartão de Crédito On-line')) {
+              currentPedido.availablePaymentMethods.add({
+                'id': data['payment_accounts']['stripe'] ?? 'stripe',
+                'title': 'Cartão de Crédito On-line'
+              });
+              seenTitles.add('Cartão de Crédito On-line');
+            } else if (!seenTitles.contains(title)) {
+              currentPedido.availablePaymentMethods.add({'id': id, 'title': title});
+              seenTitles.add(title);
+            }
+          }
+
+          final paymentAccounts = data['payment_accounts'] as Map?;
+          currentPedido.paymentAccounts = paymentAccounts != null
+              ? paymentAccounts.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''))
+              : {
+                  'stripe': newStoreFinal == 'Unidade Barreiro'
+                      ? 'stripe_cc'
+                      : newStoreFinal == 'Unidade Sion'
+                          ? 'eh_stripe_pay'
+                          : 'stripe',
+                  'pagarme': newStoreFinal == 'Unidade Barreiro'
+                      ? 'barreiro'
+                      : newStoreFinal == 'Unidade Sion'
+                          ? 'sion'
+                          : 'central'
+                };
+
+          if (currentPedido.selectedPaymentMethod.isNotEmpty &&
+              !currentPedido.availablePaymentMethods.any((m) => m['title'] == currentPedido.selectedPaymentMethod)) {
+            currentPedido.selectedPaymentMethod = currentPedido.availablePaymentMethods.isNotEmpty
+                ? currentPedido.availablePaymentMethods.first['title'] ?? ''
+                : '';
+          }
+        });
+
+        await _savePersistedData(currentPedido);
+      } else {
+        throw Exception('Erro ao buscar opções de entrega: ${storeResponse.statusCode} - ${storeResponse.body}');
+      }
+
+      await logToFile('[agendamento] date(raw)="${currentPedido.schedulingDate}" '
+          'time(raw)="${currentPedido.schedulingTime}" '
+          '-> date(norm)="$normalizedDate" time(norm)="$normalizedTime"');
+
+      final storeFinal = currentPedido.storeFinal.isEmpty ? 'Central Distribuição (Sagrada Família)' : currentPedido.storeFinal;
+      final storeId = StoreNormalize.getId(storeFinal);
+      final normalizedStoreFinal = StoreNormalize.getName(storeId);
+      final service = CriarPedidoService();
+
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final String billingCompany = authProvider.userId?.toString() ?? '7';
+      final methodSlug = _paymentSlugFromLabel(currentPedido.selectedPaymentMethod);
+
+      await logToFile('ENVIANDO shippingCost: $finalShippingCost (isManuallyEdited: ${currentPedido.isShippingCostManuallyEdited})');
+
+      final order = await service.createOrder(
+        customerName: currentPedido.nameController.text,
+        customerEmail: 'orders@aogosto.com.br',
+        customerPhone: phone,
+        billingCompany: billingCompany,
+        products: currentPedido.products,
+        shippingMethod: currentPedido.shippingMethod,
+        storeFinal: normalizedStoreFinal,
+        pickupStoreId: storeId,
+        billingPostcode: cep,
+        billingAddress1: currentPedido.addressController.text,
+        billingNumber: currentPedido.numberController.text,
+        billingAddress2: currentPedido.complementController.text,
+        billingNeighborhood: currentPedido.neighborhoodController.text,
+        billingCity: currentPedido.cityController.text,
+        shippingCost: finalShippingCost,
+        paymentMethod: methodSlug,
+        customerNotes: currentPedido.showNotesField ? currentPedido.notesController.text : '',
+        schedulingDate: normalizedDate,
+        schedulingTime: normalizedTime,
+        couponCode: currentPedido.showCouponField ? currentPedido.couponController.text : '',
+        paymentAccountStripe: currentPedido.paymentAccounts['stripe'] ?? 'stripe',
+        paymentAccountPagarme: currentPedido.paymentAccounts['pagarme'] ?? 'central',
+      );
+
+      await logToFile('Order created: #${order['id']}, store: ${currentPedido.storeFinal}, payment: $methodSlug, shippingCost: $finalShippingCost');
+
+      currentPedido.updateLastPhoneNumber(currentPedido.phoneController.text);
+      final isPix = (methodSlug == 'pagarme_custom_pix');
+      final isStripe = (methodSlug == currentPedido.paymentAccounts['stripe']);
+
+      if (isPix || isStripe) {
+        final totalBeforeDiscount = currentPedido.products.fold<double>(
+          0.0,
+          (sum, product) => sum + (product['price'] * (product['quantity'] ?? 1)),
+        ) + currentPedido.shippingCost;
+        final discountAmount = currentPedido.isCouponValid ? currentPedido.discountAmount : 0.0;
+        final totalAmount = totalBeforeDiscount - discountAmount;
+
+        final paymentLinkResult = await _generatePaymentLink(
+          customerName: currentPedido.nameController.text,
+          phoneNumber: currentPedido.phoneController.text,
+          amount: totalAmount,
+          storeUnit: normalizedStoreFinal,
+          paymentMethod: isPix ? 'Pix' : 'Stripe',
+          orderId: order['id'].toString(),
+        );
+
+        if (paymentLinkResult != null) {
+          savedPaymentInstructions = isPix
+              ? jsonEncode({'type': 'pix', 'text': paymentLinkResult['text'] ?? ''})
+              : jsonEncode({'type': 'stripe', 'url': paymentLinkResult['url'] ?? ''});
+          await logToFile('Payment instructions generated: $savedPaymentInstructions');
+        } else {
+          await logToFile('Erro: paymentLinkResult is null for payment method: $methodSlug');
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _resultMessage = 'Pedido #${order['id']} criado com sucesso!${savedPaymentInstructions != null ? '\nInstruções de pagamento geradas.' : ''}';
+          currentPedido.paymentInstructions = savedPaymentInstructions;
+          currentPedido.resetControllers();
+          currentPedido.products.clear();
+          currentPedido.shippingMethod = '';
+          currentPedido.selectedPaymentMethod = '';
+          currentPedido.storeFinal = '';
+          currentPedido.pickupStoreId = '';
+          currentPedido.shippingCost = 0.0;
+          currentPedido.shippingCostController.text = '0.00';
+          currentPedido.showNotesField = false;
+          currentPedido.showCouponField = false;
+          currentPedido.schedulingDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+          currentPedido.schedulingTime = '09:00 - 12:00';
+          currentPedido.isCouponValid = false;
+          currentPedido.discountAmount = 0.0;
+          currentPedido.couponErrorMessage = null;
+          currentPedido.availablePaymentMethods = [];
+          currentPedido.paymentAccounts = {'stripe': 'stripe', 'pagarme': 'central'};
+          currentPedido.isShippingCostManuallyEdited = false;
+          currentPedido.originalShippingCost = 0.0;
+        });
+        await _savePersistedData(currentPedido);
+      }
+    } catch (error, stackTrace) {
+      await logToFile('Erro ao criar pedido: $error, StackTrace: $stackTrace');
+      if (mounted) {
+        setState(() {
+          _resultMessage = 'Erro ao criar pedido: $error';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        final tabState = context.findAncestorStateOfType<_KeepAliveTabState>();
+        if (tabState != null) {
+          tabState.resetAddressSection();
+        }
+        await _savePersistedData(currentPedido);
+      }
     }
   }
-}
+
   Future<void> _sendWhatsAppMessage(String phoneNumber, String message) async {
     final cleanPhone = phoneNumber.replaceAll(RegExp(r'\D'), '');
     final cleanMessage = message.trim();
@@ -1105,12 +1214,12 @@ final String billingCompany = authProvider.userId?.toString() ?? '7';
         }
       } else {
         final payloadStripe = {
-        'product_name': 'Pedido Ao Gosto #$orderId',
-        'amount': amountInCents,
-        'metadata': {
-        'order_id': orderId,                    // ← OBRIGATÓRIO e EXATAMENTE assim
-        },
-        'customer_email': 'orders@aogosto.com.br', // ajuda no Stripe Dashboard
+          'product_name': 'Pedido Ao Gosto #$orderId',
+          'amount': amountInCents,
+          'metadata': {
+            'order_id': orderId,
+          },
+          'customer_email': 'orders@aogosto.com.br',
         };
 
         await logToFile('Payload Stripe: ${jsonEncode(payloadStripe)}');
@@ -1188,6 +1297,8 @@ final String billingCompany = authProvider.userId?.toString() ?? '7';
         newPedido.isAddressSectionExpanded = true;
         newPedido.isProductsSectionExpanded = true;
         newPedido.isShippingSectionExpanded = true;
+        newPedido.isShippingCostManuallyEdited = false;
+        newPedido.originalShippingCost = 0.0;
         _pedidos.add(newPedido);
         _currentTabIndex = 0;
         _tabController.dispose();
@@ -1555,7 +1666,6 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
                               setStateCallback: widget.setStateCallback,
                               savePersistedData: () => widget.savePersistedData(widget.pedido),
                               checkStoreByCep: widget.checkStoreByCep,
-                              
                               pedido: widget.pedido,
                               onReset: resetAddressSection,
                             ),
@@ -1582,374 +1692,372 @@ class _KeepAliveTabState extends State<KeepAliveTab> with AutomaticKeepAliveClie
                               builder: (context) => ProductSelectionDialog(),
                             );
                             if (selectedProduct != null && mounted) {
-        widget.setStateCallback();
-        widget.pedido.products.add({
-          'id': selectedProduct['id'],
-          'name': selectedProduct['name'],
-          'quantity': 1,
-          'price': double.tryParse(selectedProduct['price'].toString()) ?? 0.0,
-          'variation_id': selectedProduct['variation_id'],
-          'variation_attributes': selectedProduct['variation_attributes'],
-          'image': selectedProduct['image'],
-        });
-        widget.savePersistedData(widget.pedido);
-      }
-    },
-    onUpdateQuantity: (index, quantity) {
-      if (index >= 0 && index < widget.pedido.products.length) {
-        widget.pedido.updateProductQuantity(index, quantity);
-        widget.savePersistedData(widget.pedido);
-      }
-    },
-    onUpdatePrice: (index, price) {
-      if (index >= 0 && index < widget.pedido.products.length) {
-        widget.pedido.products[index]['price'] = price;
-        widget.pedido.notifyListeners();
-        widget.savePersistedData(widget.pedido);
-      }
-    },
-  ),
-),
-const SizedBox(height: 16),
-ShippingSection(
-  cep: widget.pedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim(),
-  onStoreUpdated: (storeFinal, pickupStoreId) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        widget.setStateCallback();
-        final normalizedId = StoreNormalize.getId(storeFinal);
-        widget.pedido.storeFinal = StoreNormalize.getName(normalizedId);
-        widget.pedido.pickupStoreId = normalizedId;
-        widget.savePersistedData(widget.pedido);
-        widget.checkStoreByCep();
-      }
-    });
-  },
-  onShippingMethodUpdated: (method) async {
-  WidgetsBinding.instance.addPostFrameCallback((_) async {
-    if (mounted) {
-      widget.setStateCallback();
-      widget.pedido.shippingMethod = method;
-      if (method == 'pickup') {
-        widget.pedido.shippingCost = 0.0;
-        widget.pedido.shippingCostController.text = '0.00';
-        widget.pedido.storeFinal = 'Central Distribuição (Sagrada Família)';
-        widget.pedido.pickupStoreId = StoreNormalize.getId(widget.pedido.storeFinal);
-        await widget.savePersistedData(widget.pedido);
-        await Future.delayed(Duration(milliseconds: 100));
-      } else {
-        final cleanCep = widget.pedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
-        if (cleanCep.length == 8) {
-          await widget.checkStoreByCep();
-        } else {
-          widget.pedido.shippingCost = 0.0;
-          widget.pedido.shippingCostController.text = '0.00';
-          await widget.savePersistedData(widget.pedido);
-        }
-      }
-      await widget.savePersistedData(widget.pedido);
-    }
-  });
-},
-
-
-  onShippingCostUpdated: (cost) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        widget.setStateCallback();
-        widget.pedido.shippingCost = cost;
-        widget.pedido.shippingCostController.text = cost.toStringAsFixed(2);
-        widget.savePersistedData(widget.pedido);
-      }
-    });
-  },
-  pedido: widget.pedido,
-  onSchedulingChanged: widget.checkStoreByCep,
-),
-const SizedBox(height: 16),
-AnimatedContainer(
-  duration: const Duration(milliseconds: 300),
-  curve: Curves.easeOutCubic,
-  decoration: BoxDecoration(
-    color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
-    borderRadius: BorderRadius.circular(14),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withOpacity(0.05),
-        blurRadius: 12,
-        offset: const Offset(0, 4),
-      ),
-    ],
-  ),
-  child: Padding(
-    padding: const EdgeInsets.all(16.0),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(Icons.calendar_today, color: primaryColor),
-          title: Text(
-            'Data e Horário de Entrega/Retirada',
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: isDarkMode ? Colors.white : Colors.black87,
-            ),
-          ),
-        ),
-        SchedulingSection(
-          shippingMethod: widget.pedido.shippingMethod,
-          storeFinal: widget.pedido.storeFinal,
-          onDateTimeUpdated: (date, time) {
-            widget.setStateCallback();
-            widget.pedido.schedulingDate = date;
-            widget.pedido.schedulingTime = ensureTimeRange(time);
-            widget.savePersistedData(widget.pedido);
-            widget.checkStoreByCep();
-          },
-          onSchedulingChanged: widget.checkStoreByCep,
-          initialDate: _parseInitialDate(widget.pedido.schedulingDate, widget.pedido.shippingMethod),
-          initialTimeSlot: widget.pedido.schedulingTime.isNotEmpty ? widget.pedido.schedulingTime : null,
-        ),
-      ],
-    ),
-  ),
-),
-const SizedBox(height: 16),
-AnimatedContainer(
-  duration: const Duration(milliseconds: 300),
-  curve: Curves.easeOutCubic,
-  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-  decoration: BoxDecoration(
-    color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
-    borderRadius: BorderRadius.circular(14),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withOpacity(0.05),
-        blurRadius: 12,
-        offset: const Offset(0, 4),
-      ),
-    ],
-  ),
-  child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: Icon(Icons.note, color: primaryColor),
-        title: Text(
-          'Observações do Cliente',
-          style: GoogleFonts.poppins(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: isDarkMode ? Colors.white : Colors.black87,
-          ),
-        ),
-        trailing: Checkbox(
-          value: widget.pedido.showNotesField,
-          onChanged: (value) {
-            widget.setStateCallback();
-            widget.pedido.showNotesField = value ?? false;
-            if (!widget.pedido.showNotesField) {
-              widget.pedido.notesController.text = '';
-            }
-            widget.savePersistedData(widget.pedido);
-          },
-          activeColor: primaryColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-        ),
-      ),
-      AnimatedCrossFade(
-        duration: const Duration(milliseconds: 200),
-        crossFadeState: widget.pedido.showNotesField ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-        firstChild: const SizedBox.shrink(),
-        secondChild: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: TextFormField(
-            controller: widget.pedido.notesController,
-            maxLines: 3,
-            decoration: InputDecoration(
-              labelText: 'Observações',
-              labelStyle: GoogleFonts.poppins(
-                color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor, width: 2),
-              ),
-              prefixIcon: Icon(Icons.note_alt, color: primaryColor),
-              filled: true,
-              fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: isDarkMode ? Colors.white : Colors.black87,
-            ),
-            onFieldSubmitted: (value) {
-              widget.savePersistedData(widget.pedido);
-            },
-          ),
-        ),
-      ),
-    ],
-  ),
-),
-const SizedBox(height: 16),
-AnimatedContainer(
-  duration: const Duration(milliseconds: 300),
-  curve: Curves.easeOutCubic,
-  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-  decoration: BoxDecoration(
-    color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
-    borderRadius: BorderRadius.circular(14),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withOpacity(0.05),
-        blurRadius: 12,
-        offset: const Offset(0, 4),
-      ),
-    ],
-  ),
-  child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: Icon(Icons.discount, color: primaryColor),
-        title: Text(
-          'Cupom de Desconto',
-          style: GoogleFonts.poppins(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: isDarkMode ? Colors.white : Colors.black87,
-          ),
-        ),
-        trailing: Checkbox(
-          value: widget.pedido.showCouponField,
-          onChanged: (value) {
-            widget.setStateCallback();
-            widget.pedido.showCouponField = value ?? false;
-            if (!widget.pedido.showCouponField) {
-              widget.pedido.couponController.text = '';
-              widget.pedido.isCouponValid = false;
-              widget.pedido.discountAmount = 0.0;
-              widget.pedido.couponErrorMessage = null;
-            }
-            widget.savePersistedData(widget.pedido);
-          },
-          activeColor: primaryColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-        ),
-      ),
-      AnimatedCrossFade(
-        duration: const Duration(milliseconds: 200),
-        crossFadeState: widget.pedido.showCouponField ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-        firstChild: const SizedBox.shrink(),
-        secondChild: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: TextFormField(
-            controller: widget.pedido.couponController,
-            decoration: InputDecoration(
-              labelText: 'Código do Cupom',
-              labelStyle: GoogleFonts.poppins(
-                color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: primaryColor, width: 2),
-              ),
-              prefixIcon: Icon(Icons.discount, color: primaryColor),
-              filled: true,
-              fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              suffixIcon: widget.pedido.isCouponValid
-                  ? Icon(Icons.check_circle, color: Colors.green.shade600)
-                  : widget.pedido.couponController.text.isNotEmpty
-                      ? Icon(Icons.error, color: Colors.red.shade600)
-                      : null,
-            ),
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: isDarkMode ? Colors.white : Colors.black87,
-            ),
-            onFieldSubmitted: (value) {
-              widget.savePersistedData(widget.pedido);
-            },
-            validator: (value) => null,
-          ),
-        ),
-      ),
-      if (widget.pedido.couponErrorMessage != null) ...[
-        const SizedBox(height: 8),
-        Text(
-          widget.pedido.couponErrorMessage!,
-          style: GoogleFonts.poppins(
-            color: Colors.red.shade600,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    ],
-  ),
-),
-                    const SizedBox(height: 16),
-SummarySection(
-  totalOriginal: totalOriginal,
-  isCouponValid: widget.pedido.isCouponValid,
-  couponCode: widget.pedido.couponController.text,
-  discountAmount: widget.pedido.discountAmount,
-  shippingCost: widget.pedido.shippingCost, 
-  isLoading: widget.isLoading,
-  onCreateOrder: widget.createOrder,
-  pedido: widget.pedido,
-  savePersistedData: widget.savePersistedData,
-  paymentInstructions: widget.pedido.paymentInstructions,
-  resultMessage: widget.resultMessage,
-),
-const SizedBox(height: 16),
-TextButton.icon(
-  onPressed: widget.clearLocalData,
-  icon: Icon(Icons.refresh, size: 16, color: primaryColor),
-  label: Text(
-    'Limpar Dados',
-    style: GoogleFonts.poppins(
-      fontSize: 14,
-      fontWeight: FontWeight.w500,
-      color: primaryColor,
-    ),
-  ),
-  style: TextButton.styleFrom(
-    foregroundColor: primaryColor,
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-  ),
-),
-                  ],
+                              widget.setStateCallback();
+                              widget.pedido.products.add({
+                                'id': selectedProduct['id'],
+                                'name': selectedProduct['name'],
+                                'quantity': 1,
+                                'price': double.tryParse(selectedProduct['price'].toString()) ?? 0.0,
+                                'variation_id': selectedProduct['variation_id'],
+                                'variation_attributes': selectedProduct['variation_attributes'],
+                                'image': selectedProduct['image'],
+                              });
+                              widget.savePersistedData(widget.pedido);
+                            }
+                          },
+                          onUpdateQuantity: (index, quantity) {
+                            if (index >= 0 && index < widget.pedido.products.length) {
+                              widget.pedido.updateProductQuantity(index, quantity);
+                              widget.savePersistedData(widget.pedido);
+                            }
+                          },
+                          onUpdatePrice: (index, price) {
+                            if (index >= 0 && index < widget.pedido.products.length) {
+                              widget.pedido.products[index]['price'] = price;
+                              widget.pedido.notifyListeners();
+                              widget.savePersistedData(widget.pedido);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ShippingSection(
+                        cep: widget.pedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim(),
+                        onStoreUpdated: (storeFinal, pickupStoreId) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) {
+                              widget.setStateCallback();
+                              final normalizedId = StoreNormalize.getId(storeFinal);
+                              widget.pedido.storeFinal = StoreNormalize.getName(normalizedId);
+                              widget.pedido.pickupStoreId = normalizedId;
+                              widget.savePersistedData(widget.pedido);
+                              widget.checkStoreByCep();
+                            }
+                          });
+                        },
+                        onShippingMethodUpdated: (method) async {
+                          WidgetsBinding.instance.addPostFrameCallback((_) async {
+                            if (mounted) {
+                              widget.setStateCallback();
+                              widget.pedido.shippingMethod = method;
+                              if (method == 'pickup') {
+                                widget.pedido.shippingCost = 0.0;
+                                widget.pedido.shippingCostController.text = '0.00';
+                                widget.pedido.storeFinal = 'Central Distribuição (Sagrada Família)';
+                                widget.pedido.pickupStoreId = StoreNormalize.getId(widget.pedido.storeFinal);
+                                await widget.savePersistedData(widget.pedido);
+                                await Future.delayed(Duration(milliseconds: 100));
+                              } else {
+                                final cleanCep = widget.pedido.cepController.text.replaceAll(RegExp(r'\D'), '').trim();
+                                if (cleanCep.length == 8) {
+                                  await widget.checkStoreByCep();
+                                } else {
+                                  widget.pedido.shippingCost = 0.0;
+                                  widget.pedido.shippingCostController.text = '0.00';
+                                  await widget.savePersistedData(widget.pedido);
+                                }
+                              }
+                              await widget.savePersistedData(widget.pedido);
+                            }
+                          });
+                        },
+                        onShippingCostUpdated: (cost) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) {
+                              widget.setStateCallback();
+                              widget.pedido.shippingCost = cost;
+                              widget.pedido.shippingCostController.text = cost.toStringAsFixed(2);
+                              widget.savePersistedData(widget.pedido);
+                            }
+                          });
+                        },
+                        pedido: widget.pedido,
+                        onSchedulingChanged: widget.checkStoreByCep,
+                      ),
+                      const SizedBox(height: 16),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                        decoration: BoxDecoration(
+                          color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(Icons.calendar_today, color: primaryColor),
+                                title: Text(
+                                  'Data e Horário de Entrega/Retirada',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDarkMode ? Colors.white : Colors.black87,
+                                  ),
+                                ),
+                              ),
+                              SchedulingSection(
+                                shippingMethod: widget.pedido.shippingMethod,
+                                storeFinal: widget.pedido.storeFinal,
+                                onDateTimeUpdated: (date, time) {
+                                  widget.setStateCallback();
+                                  widget.pedido.schedulingDate = date;
+                                  widget.pedido.schedulingTime = ensureTimeRange(time);
+                                  widget.savePersistedData(widget.pedido);
+                                  widget.checkStoreByCep();
+                                },
+                                onSchedulingChanged: widget.checkStoreByCep,
+                                initialDate: _parseInitialDate(widget.pedido.schedulingDate, widget.pedido.shippingMethod),
+                                initialTimeSlot: widget.pedido.schedulingTime.isNotEmpty ? widget.pedido.schedulingTime : null,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.note, color: primaryColor),
+                              title: Text(
+                                'Observações do Cliente',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDarkMode ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                              trailing: Checkbox(
+                                value: widget.pedido.showNotesField,
+                                onChanged: (value) {
+                                  widget.setStateCallback();
+                                  widget.pedido.showNotesField = value ?? false;
+                                  if (!widget.pedido.showNotesField) {
+                                    widget.pedido.notesController.text = '';
+                                  }
+                                  widget.savePersistedData(widget.pedido);
+                                },
+                                activeColor: primaryColor,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                              ),
+                            ),
+                            AnimatedCrossFade(
+                              duration: const Duration(milliseconds: 200),
+                              crossFadeState: widget.pedido.showNotesField ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                              firstChild: const SizedBox.shrink(),
+                              secondChild: Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: TextFormField(
+                                  controller: widget.pedido.notesController,
+                                  maxLines: 3,
+                                  decoration: InputDecoration(
+                                    labelText: 'Observações',
+                                    labelStyle: GoogleFonts.poppins(
+                                      color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(color: primaryColor, width: 2),
+                                    ),
+                                    prefixIcon: Icon(Icons.note_alt, color: primaryColor),
+                                    filled: true,
+                                    fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  ),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    color: isDarkMode ? Colors.white : Colors.black87,
+                                  ),
+                                  onFieldSubmitted: (value) {
+                                    widget.savePersistedData(widget.pedido);
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isDarkMode ? Colors.black.withOpacity(0.2) : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.discount, color: primaryColor),
+                              title: Text(
+                                'Cupom de Desconto',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDarkMode ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                              trailing: Checkbox(
+                                value: widget.pedido.showCouponField,
+                                onChanged: (value) {
+                                  widget.setStateCallback();
+                                  widget.pedido.showCouponField = value ?? false;
+                                  if (!widget.pedido.showCouponField) {
+                                    widget.pedido.couponController.text = '';
+                                    widget.pedido.isCouponValid = false;
+                                    widget.pedido.discountAmount = 0.0;
+                                    widget.pedido.couponErrorMessage = null;
+                                  }
+                                  widget.savePersistedData(widget.pedido);
+                                },
+                                activeColor: primaryColor,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                              ),
+                            ),
+                            AnimatedCrossFade(
+                              duration: const Duration(milliseconds: 200),
+                              crossFadeState: widget.pedido.showCouponField ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                              firstChild: const SizedBox.shrink(),
+                              secondChild: Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: TextFormField(
+                                  controller: widget.pedido.couponController,
+                                  decoration: InputDecoration(
+                                    labelText: 'Código do Cupom',
+                                    labelStyle: GoogleFonts.poppins(
+                                      color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(color: primaryColor, width: 2),
+                                    ),
+                                    prefixIcon: Icon(Icons.discount, color: primaryColor),
+                                    filled: true,
+                                    fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    suffixIcon: widget.pedido.isCouponValid
+                                        ? Icon(Icons.check_circle, color: Colors.green.shade600)
+                                        : widget.pedido.couponController.text.isNotEmpty
+                                            ? Icon(Icons.error, color: Colors.red.shade600)
+                                            : null,
+                                  ),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    color: isDarkMode ? Colors.white : Colors.black87,
+                                  ),
+                                  onFieldSubmitted: (value) {
+                                    widget.savePersistedData(widget.pedido);
+                                  },
+                                  validator: (value) => null,
+                                ),
+                              ),
+                            ),
+                            if (widget.pedido.couponErrorMessage != null) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                widget.pedido.couponErrorMessage!,
+                                style: GoogleFonts.poppins(
+                                  color: Colors.red.shade600,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SummarySection(
+                        totalOriginal: totalOriginal,
+                        isCouponValid: widget.pedido.isCouponValid,
+                        couponCode: widget.pedido.couponController.text,
+                        discountAmount: widget.pedido.discountAmount,
+                        shippingCost: widget.pedido.shippingCost,
+                        isLoading: widget.isLoading,
+                        onCreateOrder: widget.createOrder,
+                        pedido: widget.pedido,
+                        savePersistedData: widget.savePersistedData,
+                        paymentInstructions: widget.pedido.paymentInstructions,
+                        resultMessage: widget.resultMessage,
+                      ),
+                      const SizedBox(height: 16),
+                      TextButton.icon(
+                        onPressed: widget.clearLocalData,
+                        icon: Icon(Icons.refresh, size: 16, color: primaryColor),
+                        label: Text(
+                          'Limpar Dados',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: primaryColor,
+                          ),
+                        ),
+                        style: TextButton.styleFrom(
+                          foregroundColor: primaryColor,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
-} 

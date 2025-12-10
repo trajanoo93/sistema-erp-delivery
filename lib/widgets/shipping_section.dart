@@ -1,3 +1,4 @@
+// lib/widgets/shipping_section.dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
@@ -56,7 +57,6 @@ class _ShippingSectionState extends State<ShippingSection> {
     _storeFinal = _pickupStore;
     _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '86261';
 
-    // Salva o valor atual ao iniciar (se for pickup)
     if (_shippingMethod == 'pickup') {
       widget.pedido.originalShippingCost = widget.pedido.shippingCost;
       widget.pedido.shippingCost = 0.0;
@@ -170,36 +170,37 @@ class _ShippingSectionState extends State<ShippingSection> {
 
       await logToFile('Store decision response status: ${storeResponse.statusCode}, body: ${storeResponse.body}');
 
-     double shippingCost = 0.0;
-if (_shippingMethod == 'delivery') {
-  if (!widget.pedido.isShippingCostManuallyEdited) {
-    await logToFile('Recalculando frete (não editado manualmente)');
-    final costResponse = await http.get(
-      Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(Duration(seconds: 15), onTimeout: () {
-      throw Exception('Timeout ao buscar custo de frete');
-    });
+      double shippingCost = 0.0;
+      if (_shippingMethod == 'delivery') {
+        if (!widget.pedido.isShippingCostManuallyEdited) {
+          await logToFile('Recalculando frete (não editado manualmente)');
+          final costResponse = await http.get(
+            Uri.parse('https://aogosto.com.br/delivery/wp-json/custom/v1/shipping-cost?cep=$cep'),
+            headers: {'Content-Type': 'application/json'},
+          ).timeout(const Duration(seconds: 15), onTimeout: () {
+            throw Exception('Timeout ao buscar custo de frete');
+          });
 
-    await logToFile('Shipping cost response status: ${costResponse.statusCode}, body: ${costResponse.body}');
-    if (costResponse.statusCode == 200) {
-      final costData = jsonDecode(costResponse.body);
-      if (costData['status'] == 'success' && costData['shipping_options'] != null && costData['shipping_options'].isNotEmpty) {
-        shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
-        widget.pedido.shippingCost = shippingCost;
-        widget.pedido.shippingCostController.text = shippingCost.toStringAsFixed(2);
-      } else {
-        await logToFile('Nenhuma opção de frete válida retornada para CEP: $cep');
-        shippingCost = 0.0;
+          await logToFile('Shipping cost response status: ${costResponse.statusCode}, body: ${costResponse.body}');
+          if (costResponse.statusCode == 200) {
+            final costData = jsonDecode(costResponse.body);
+            if (costData['status'] == 'success' && costData['shipping_options'] != null && costData['shipping_options'].isNotEmpty) {
+              shippingCost = double.tryParse(costData['shipping_options'][0]['cost']?.toString() ?? '0.0') ?? 0.0;
+              widget.pedido.shippingCost = shippingCost;
+              widget.pedido.shippingCostController.text = shippingCost.toStringAsFixed(2);
+              await logToFile('Frete recalculado automaticamente: $shippingCost');
+            } else {
+              await logToFile('Nenhuma opção de frete válida retornada para CEP: $cep');
+              shippingCost = 0.0;
+            }
+          } else {
+            throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode} - ${costResponse.body}');
+          }
+        } else {
+          shippingCost = widget.pedido.shippingCost;
+          await logToFile('Mantendo frete editado manualmente: $shippingCost');
+        }
       }
-    } else {
-      throw Exception('Erro ao buscar custo de frete: ${costResponse.statusCode} - ${costResponse.body}');
-    }
-  } else {
-    await logToFile('Mantendo frete editado manualmente: ${widget.pedido.shippingCost}');
-    shippingCost = widget.pedido.shippingCost; // Usa o valor editado
-  }
-}
 
       if (storeResponse.statusCode == 200) {
         final storeDecision = jsonDecode(storeResponse.body);
@@ -257,7 +258,6 @@ if (_shippingMethod == 'delivery') {
                   : '';
             }
 
-            // Só atualiza se NÃO foi editado manualmente
             if (!widget.pedido.isShippingCostManuallyEdited) {
               widget.pedido.shippingCost = _shippingMethod == 'pickup' ? 0.0 : shippingCost;
               widget.pedido.shippingCostController.text = widget.pedido.shippingCost.toStringAsFixed(2);
@@ -365,17 +365,16 @@ if (_shippingMethod == 'delivery') {
                 DropdownMenuItem(value: 'delivery', child: Text('Delivery')),
                 DropdownMenuItem(value: 'pickup', child: Text('Retirada na Unidade')),
               ],
-              onChanged: (value) {
+              // ✅ CORRIGIDO: async no callback externo + Future.microtask
+              onChanged: (value) async {
                 if (value != null) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) async {
+                  await Future.microtask(() async {
                     if (mounted) {
                       setState(() {
                         _shippingMethod = value;
 
                         if (_shippingMethod == 'pickup') {
-                          // SALVA O VALOR ANTES DE ZERAR
                           widget.pedido.originalShippingCost = widget.pedido.shippingCost;
-
                           _pickupStore = _pickupStores.first;
                           _storeFinal = _pickupStore;
                           _pickupStoreId = _pickupStoreIds[_pickupStore] ?? '86261';
@@ -385,11 +384,10 @@ if (_shippingMethod == 'delivery') {
                           widget.pedido.storeFinal = _storeFinal;
                           widget.pedido.pickupStoreId = _pickupStoreId;
                         } else {
-                          // RESTAURA O VALOR ORIGINAL
+                          widget.pedido.isShippingCostManuallyEdited = false;
+                          logToFile('Voltou para delivery, resetando isShippingCostManuallyEdited');
                           widget.pedido.shippingCost = widget.pedido.originalShippingCost;
                           widget.pedido.shippingCostController.text = widget.pedido.shippingCost.toStringAsFixed(2);
-                          widget.pedido.isShippingCostManuallyEdited = true;
-
                           _pickupStore = '';
                           _storeFinal = '';
                           _pickupStoreId = '';
@@ -473,7 +471,6 @@ if (_shippingMethod == 'delivery') {
               ),
             ),
           ],
-          // CAMPO DE TAXA REMOVIDO (agora só no SummarySection)
           const SizedBox(height: 8),
         ],
       ),
