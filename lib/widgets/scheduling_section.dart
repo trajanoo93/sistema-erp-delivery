@@ -83,10 +83,8 @@ class _SchedulingSectionState extends State<SchedulingSection> {
         if (widget.shippingMethod == 'pickup') {
           _availableTimeSlots = ['09:00 - 12:00'];
         } else if (isPhysicalStore) {
-          // Lojas físicas em domingos: apenas até 15:00
           _availableTimeSlots = ['09:00 - 12:00', '12:00 - 15:00'];
         } else {
-          // Central Distribuição em domingos
           _availableTimeSlots = ['09:00 - 12:00', '12:00 - 15:00', '15:00 - 18:00'];
         }
       } else {
@@ -101,7 +99,7 @@ class _SchedulingSectionState extends State<SchedulingSection> {
           ];
         }
       }
-      // Filtrar slots passados, incluindo o slot atual
+      
       if (isToday) {
         _availableTimeSlots = _availableTimeSlots.where((slot) {
           final parts = slot.split('-').map((s) => s.trim()).toList();
@@ -110,9 +108,9 @@ class _SchedulingSectionState extends State<SchedulingSection> {
           return currentHour <= endHour;
         }).toList();
       }
-      // Garantir que haja pelo menos um slot
+      
       if (_availableTimeSlots.isEmpty && isToday) {
-        _availableTimeSlots = ['18:00 - 21:00']; // Slot padrão para o final do dia
+        _availableTimeSlots = ['18:00 - 21:00'];
       }
       if (_selectedTimeSlot == null || !_availableTimeSlots.contains(_selectedTimeSlot)) {
         _selectedTimeSlot = _availableTimeSlots.isNotEmpty ? _availableTimeSlots.first : null;
@@ -122,50 +120,55 @@ class _SchedulingSectionState extends State<SchedulingSection> {
   }
 
   Future<void> _selectDate(BuildContext context) async {
-  final DateTime? picked = await showDatePicker(
-    context: context,
-    initialDate: _selectedDate ?? DateTime.now(),
-    firstDate: DateTime.now(),
-    lastDate: DateTime.now().add(const Duration(days: 30)),
-    locale: const Locale('pt', 'BR'),
-    cancelText: 'Cancelar',  // Adicione isso para customizar o botão de cancelar
-    confirmText: 'Confirmar',  // Adicione isso para customizar o botão de confirmar
-    builder: (context, child) {
-      final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-      return Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: ColorScheme(
-            brightness: isDarkMode ? Brightness.dark : Brightness.light,
-            primary: const Color(0xFFF28C38),
-            onPrimary: Colors.white,
-            secondary: const Color(0xFFFFCC80),
-            onSecondary: Colors.black87,
-            surface: isDarkMode ? Colors.grey[800]! : Colors.white,
-            onSurface: isDarkMode ? Colors.white70 : Colors.black87,
-            error: Colors.red.shade700,
-            onError: Colors.white,
-          ),
-          textButtonTheme: TextButtonThemeData(
-            style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFFF28C38),
-              textStyle: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = const Color(0xFFF28C38);
+    
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 30)),
+      locale: const Locale('pt', 'BR'),
+      cancelText: 'Cancelar',
+      confirmText: 'Confirmar',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme(
+              brightness: isDarkMode ? Brightness.dark : Brightness.light,
+              primary: primaryColor,
+              onPrimary: Colors.white,
+              secondary: const Color(0xFFFFCC80),
+              onSecondary: Colors.black87,
+              surface: isDarkMode ? Colors.grey[800]! : Colors.white,
+              onSurface: isDarkMode ? Colors.white70 : Colors.black87,
+              error: Colors.red.shade700,
+              onError: Colors.white,
             ),
-          ), dialogTheme: DialogThemeData(backgroundColor: isDarkMode ? Colors.grey[800] : Colors.white),
-        ),
-        child: child!,  // Remova a Column e os botões extras; use apenas o child original
-      );
-    },
-  );
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: primaryColor,
+                textStyle: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+            ),
+            dialogTheme: DialogThemeData(
+              backgroundColor: isDarkMode ? Colors.grey[800] : Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
 
-  if (picked != null && picked != _selectedDate && mounted) {
-    setState(() {
-      _selectedDate = picked;
-      _updateTimeSlots();
-    });
-    _updateParent();
-    await logToFile('Data selecionada: ${DateFormat('dd/MM/yyyy').format(picked)}');
+    if (picked != null && picked != _selectedDate && mounted) {
+      setState(() {
+        _selectedDate = picked;
+        _updateTimeSlots();
+      });
+      _updateParent();
+      await logToFile('Data selecionada: ${DateFormat('dd/MM/yyyy').format(picked)}');
+    }
   }
-}
 
   void _updateParent() {
     if (mounted && _selectedDate != null && _selectedTimeSlot != null) {
@@ -184,56 +187,60 @@ class _SchedulingSectionState extends State<SchedulingSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: () => _selectDate(context),
-                child: AbsorbPointer(
-                  child: TextFormField(
-                    readOnly: true,
-                    decoration: InputDecoration(
-                      labelText: widget.shippingMethod == 'delivery' ? 'Data de Entrega' : 'Data de Retirada',
-                      labelStyle: GoogleFonts.poppins(
-                        color: isDarkMode ? Colors.white70 : Colors.black54,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: primaryColor, width: 2),
-                      ),
-                      prefixIcon: Icon(Icons.calendar_today, color: primaryColor),
-                      filled: true,
-                      fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
-                    ),
-                    controller: TextEditingController(
-                      text: _selectedDate != null
-                          ? DateFormat('dd/MM/yyyy').format(_selectedDate!)
-                          : 'Selecione a data',
-                    ),
-                    validator: null,
-                  ),
+        // 🎨 PADRONIZADO: Campo de data com ícone size 20
+        GestureDetector(
+          onTap: () => _selectDate(context),
+          child: AbsorbPointer(
+            child: TextFormField(
+              readOnly: true,
+              decoration: InputDecoration(
+                labelText: widget.shippingMethod == 'delivery' ? 'Data de Entrega' : 'Data de Retirada',
+                labelStyle: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: isDarkMode ? Colors.white70 : Colors.black54,
                 ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: primaryColor.withOpacity(0.3)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: primaryColor, width: 2),
+                ),
+                prefixIcon: Icon(Icons.calendar_today, color: primaryColor, size: 20),
+                filled: true,
+                fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+              controller: TextEditingController(
+                text: _selectedDate != null
+                    ? DateFormat('dd/MM/yyyy').format(_selectedDate!)
+                    : 'Selecione a data',
+              ),
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: isDarkMode ? Colors.white : Colors.black87,
               ),
             ),
-          ],
+          ),
         ),
-        const SizedBox(height: 20),
+        
+        const SizedBox(height: 16), // 🎨 PADRONIZADO: Espaçamento entre campos
+        
+        // 🎨 PADRONIZADO: Campo de horário com ícone size 20
         DropdownButtonFormField<String>(
           value: _selectedTimeSlot,
           decoration: InputDecoration(
             labelText: widget.shippingMethod == 'delivery' ? 'Horário de Entrega' : 'Horário de Retirada',
             labelStyle: GoogleFonts.poppins(
-              color: isDarkMode ? Colors.white70 : Colors.black54,
+              fontSize: 14,
               fontWeight: FontWeight.w500,
+              color: isDarkMode ? Colors.white70 : Colors.black54,
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -247,9 +254,10 @@ class _SchedulingSectionState extends State<SchedulingSection> {
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(color: primaryColor, width: 2),
             ),
-            prefixIcon: Icon(Icons.access_time, color: primaryColor),
+            prefixIcon: Icon(Icons.access_time, color: primaryColor, size: 20),
             filled: true,
             fillColor: isDarkMode ? Colors.grey[800] : Colors.white,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           ),
           items: _availableTimeSlots.map((slot) {
             return DropdownMenuItem<String>(
@@ -273,6 +281,7 @@ class _SchedulingSectionState extends State<SchedulingSection> {
             }
           },
           validator: (value) => value == null ? 'Selecione um horário' : null,
+          dropdownColor: isDarkMode ? Colors.grey[800] : Colors.white,
         ),
       ],
     );
