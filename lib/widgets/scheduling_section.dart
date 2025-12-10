@@ -1,3 +1,5 @@
+// lib/widgets/scheduling_section.dart
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -33,7 +35,22 @@ class _SchedulingSectionState extends State<SchedulingSection> {
   @override
   void initState() {
     super.initState();
-    _selectedDate = widget.initialDate ?? DateTime.now();
+    // 🐛 FIX: Garantir que data inicial seja HOJE ou no futuro
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    if (widget.initialDate != null) {
+      final initialDateNormalized = DateTime(
+        widget.initialDate!.year,
+        widget.initialDate!.month,
+        widget.initialDate!.day,
+      );
+      // Se initialDate é no passado, usa hoje
+      _selectedDate = initialDateNormalized.isBefore(today) ? today : initialDateNormalized;
+    } else {
+      _selectedDate = today;
+    }
+    
     _updateTimeSlots();
     _selectedTimeSlot = widget.initialTimeSlot != null && _availableTimeSlots.contains(widget.initialTimeSlot)
         ? widget.initialTimeSlot
@@ -55,7 +72,21 @@ class _SchedulingSectionState extends State<SchedulingSection> {
         widget.initialDate != oldWidget.initialDate ||
         widget.initialTimeSlot != oldWidget.initialTimeSlot) {
       setState(() {
-        _selectedDate = widget.initialDate ?? DateTime.now();
+        // 🐛 FIX: Garantir que data seja HOJE ou no futuro
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        
+        if (widget.initialDate != null) {
+          final initialDateNormalized = DateTime(
+            widget.initialDate!.year,
+            widget.initialDate!.month,
+            widget.initialDate!.day,
+          );
+          _selectedDate = initialDateNormalized.isBefore(today) ? today : initialDateNormalized;
+        } else {
+          _selectedDate = today;
+        }
+        
         _updateTimeSlots();
         _selectedTimeSlot = widget.initialTimeSlot != null && _availableTimeSlots.contains(widget.initialTimeSlot)
             ? widget.initialTimeSlot
@@ -73,7 +104,10 @@ class _SchedulingSectionState extends State<SchedulingSection> {
 
   void _updateTimeSlots() {
     final now = DateTime.now();
-    final isToday = _selectedDate != null && _selectedDate!.year == now.year && _selectedDate!.month == now.month && _selectedDate!.day == now.day;
+    final isToday = _selectedDate != null && 
+                    _selectedDate!.year == now.year && 
+                    _selectedDate!.month == now.month && 
+                    _selectedDate!.day == now.day;
     final isSunday = _selectedDate?.weekday == DateTime.sunday;
     final currentHour = now.hour + (now.minute / 60.0);
     final isPhysicalStore = widget.storeFinal == 'Unidade Sion' || widget.storeFinal == 'Unidade Barreiro';
@@ -100,18 +134,21 @@ class _SchedulingSectionState extends State<SchedulingSection> {
         }
       }
       
+      // Filtrar slots passados apenas se for HOJE
       if (isToday) {
         _availableTimeSlots = _availableTimeSlots.where((slot) {
           final parts = slot.split('-').map((s) => s.trim()).toList();
-          final startHour = double.parse(parts[0].split(':')[0]) + (double.parse(parts[0].split(':')[1]) / 60.0);
           final endHour = double.parse(parts[1].split(':')[0]) + (double.parse(parts[1].split(':')[1]) / 60.0);
-          return currentHour <= endHour;
+          return currentHour < endHour; // Mudado de <= para < para ser mais restritivo
         }).toList();
       }
       
+      // Garantir pelo menos um slot
       if (_availableTimeSlots.isEmpty && isToday) {
         _availableTimeSlots = ['18:00 - 21:00'];
       }
+      
+      // Atualizar slot selecionado se necessário
       if (_selectedTimeSlot == null || !_availableTimeSlots.contains(_selectedTimeSlot)) {
         _selectedTimeSlot = _availableTimeSlots.isNotEmpty ? _availableTimeSlots.first : null;
       }
@@ -123,11 +160,18 @@ class _SchedulingSectionState extends State<SchedulingSection> {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = const Color(0xFFF28C38);
     
+    // 🐛 FIX: Garantir que initialDate seja válido
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final safeInitialDate = (_selectedDate != null && !_selectedDate!.isBefore(today))
+        ? _selectedDate!
+        : today;
+    
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
+      initialDate: safeInitialDate, // 🐛 FIX: Usa data validada
+      firstDate: today, // 🐛 FIX: Sempre a partir de hoje
+      lastDate: today.add(const Duration(days: 30)),
       locale: const Locale('pt', 'BR'),
       cancelText: 'Cancelar',
       confirmText: 'Confirmar',
@@ -187,7 +231,7 @@ class _SchedulingSectionState extends State<SchedulingSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 🎨 PADRONIZADO: Campo de data com ícone size 20
+        // 🎨 Campo de data
         GestureDetector(
           onTap: () => _selectDate(context),
           child: AbsorbPointer(
@@ -230,9 +274,9 @@ class _SchedulingSectionState extends State<SchedulingSection> {
           ),
         ),
         
-        const SizedBox(height: 16), // 🎨 PADRONIZADO: Espaçamento entre campos
+        const SizedBox(height: 16),
         
-        // 🎨 PADRONIZADO: Campo de horário com ícone size 20
+        // 🎨 Campo de horário
         DropdownButtonFormField<String>(
           value: _selectedTimeSlot,
           decoration: InputDecoration(
