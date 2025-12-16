@@ -1,3 +1,4 @@
+import 'package:firedart/firestore/models.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -23,15 +24,28 @@ class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin
   final TextEditingController _endDateController = TextEditingController();
   String _selectedStatus = 'Todos';
   int _totalFilteredCount = 0;
-  int _maxDisplayPedidos = 300;
+  
+  // ALTERAÇÃO 1: Começa exibindo apenas 100
+  int _maxDisplayPedidos = 100; 
+  
   bool _isInitialLoading = true;
+  bool _isLoadingMore = false;
   String? _errorMessage;
   late final dynamic firestore;
   bool _isDesktop = false;
-  Timer? _pollingTimer;
+  
   StreamSubscription? _streamSubscription;
   final ScrollController _headerScrollController = ScrollController();
   final ScrollController _bodyScrollController = ScrollController();
+
+  // Para paginação
+  mobile.DocumentSnapshot? _lastDocument; 
+  int _desktopOffset = 0;
+  
+  // ALTERAÇÃO 2: Busca no banco de 100 em 100
+  static const int _pageSize = 100; 
+  
+  DateTime? _lastCreatedAt;
 
   // Cores
   final Color primaryColor = const Color(0xFFF28C38);
@@ -63,53 +77,52 @@ class _PedidosPageState extends State<PedidosPage> with TickerProviderStateMixin
     '-',
   ];
 
-  // FUNÇÃO CORRIGIDA: pega o CD corretamente em qualquer situação
   String getCdName(Map<String, dynamic> pedido) {
-  final agendamentoCd = pedido['agendamento']?['cd']?.toString();
-  if (agendamentoCd != null && agendamentoCd.trim().isNotEmpty && agendamentoCd != '-') {
-    final trimmed = agendamentoCd.trim();
-    if (trimmed.contains('Sion')) return 'Sion';
-    if (trimmed.contains('Barreiro')) return 'Barreiro';
-    if (trimmed.contains('Central')) return 'Central';
-    return trimmed; // caso tenha algo diferente no futuro
+    final agendamentoCd = pedido['agendamento']?['cd']?.toString();
+    if (agendamentoCd != null && agendamentoCd.trim().isNotEmpty && agendamentoCd != '-') {
+      final trimmed = agendamentoCd.trim();
+      if (trimmed.contains('Sion')) return 'Sion';
+      if (trimmed.contains('Barreiro')) return 'Barreiro';
+      if (trimmed.contains('Central')) return 'Central';
+      return trimmed;
+    }
+
+    final rootCd = pedido['cd']?.toString();
+    if (rootCd != null && rootCd.trim().isNotEmpty && rootCd != '-') {
+      final trimmed = rootCd.trim();
+      if (trimmed.contains('Sion')) return 'Sion';
+      if (trimmed.contains('Barreiro')) return 'Barreiro';
+      if (trimmed.contains('Central')) return 'Central';
+      return trimmed;
+    }
+
+    final loja = (pedido['loja_origem']?.toString() ?? '').toLowerCase();
+    if (loja.contains('sion')) return 'Sion';
+    if (loja.contains('barreiro')) return 'Barreiro';
+    if (loja.contains('central')) return 'Central';
+
+    return 'Central';
   }
 
-  final rootCd = pedido['cd']?.toString();
-  if (rootCd != null && rootCd.trim().isNotEmpty && rootCd != '-') {
-    final trimmed = rootCd.trim();
-    if (trimmed.contains('Sion')) return 'Sion';
-    if (trimmed.contains('Barreiro')) return 'Barreiro';
-    if (trimmed.contains('Central')) return 'Central';
-    return trimmed;
+  Color getCdColor(String cd) {
+    switch (cd) {
+      case 'Sion':
+        return Colors.purple.shade600;
+      case 'Barreiro':
+        return Colors.teal.shade600;
+      case 'Central':
+        return Colors.orange.shade700;
+      default:
+        return primaryColor;
+    }
   }
 
-  final loja = (pedido['loja_origem']?.toString() ?? '').toLowerCase();
-  if (loja.contains('sion')) return 'Sion';
-  if (loja.contains('barreiro')) return 'Barreiro';
-  if (loja.contains('central')) return 'Central';
-
-  return 'Central'; // fallback
-}
-
-Color getCdColor(String cd) {
-  switch (cd) {
-    case 'Sion':
-      return Colors.purple.shade600;
-    case 'Barreiro':
-      return Colors.teal.shade600;
-    case 'Central':
-      return Colors.orange.shade700;
-    default:
-      return primaryColor;
-  }
-}
-String getNomeCurto(String? nomeCompleto) {
+  String getNomeCurto(String? nomeCompleto) {
     if (nomeCompleto == null || nomeCompleto.trim().isEmpty) return '-';
 
     final partes = nomeCompleto.trim().split(RegExp(r'\s+'));
     if (partes.length <= 1) return partes[0];
 
-    // Pega os dois primeiros nomes significativos (ignora "de", "da", "do", etc.)
     final nomesLimpos = partes
         .map((e) => e.toLowerCase())
         .where((e) => !{'de', 'da', 'do', 'dos', 'das', 'e', 'di', 'del'}.contains(e))
@@ -162,8 +175,7 @@ String getNomeCurto(String? nomeCompleto) {
         desktop.Firestore.initialize('ao-gosto-app-c0b31');
       } catch (_) {}
       firestore = desktop.Firestore.instance;
-      _loadPedidosDesktop();
-      _startPolling();
+      _loadPedidosDesktop(initial: true);
     } else {
       firestore = mobile.FirebaseFirestore.instance;
       _initMobileStream();
@@ -176,17 +188,26 @@ String getNomeCurto(String? nomeCompleto) {
     });
   }
 
+  // ============ MOBILE STREAM OTIMIZADO ============
   void _initMobileStream() {
-    final stream = (firestore as mobile.FirebaseFirestore)
-        .collection('pedidos')
-        .orderBy('created_at', descending: true)
-        .snapshots();
+    _streamSubscription?.cancel();
+    _lastDocument = null;
+    _allPedidos.clear();
 
-    _streamSubscription = stream.listen((snapshot) {
-      final List<Map<String, dynamic>> pedidos = snapshot.docs.map((doc) {
-        final Map<String, dynamic> data = doc.data();
+    final query = (firestore as mobile.FirebaseFirestore)
+        .collection('pedidos')
+        .where('created_at', isGreaterThanOrEqualTo: _startDate)
+        .where('created_at', isLessThan: _endDate.add(const Duration(days: 1)))
+        .orderBy('created_at', descending: true)
+        .limit(_pageSize);
+
+    _streamSubscription = query.snapshots().listen((snapshot) {
+      final pedidos = snapshot.docs.map((doc) {
+        final data = doc.data();
         return {'id_doc': doc.id, ...data};
       }).toList();
+
+      _lastDocument = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
 
       setState(() {
         _allPedidos = pedidos;
@@ -201,45 +222,128 @@ String getNomeCurto(String? nomeCompleto) {
     });
   }
 
-  Future<void> _loadPedidosDesktop() async {
-    try {
-      final collection = (firestore as desktop.Firestore).collection('pedidos');
-      final docs = await collection.orderBy('created_at', descending: true).get();
+  Future<void> _loadMoreMobile() async {
+    if (_isLoadingMore || _lastDocument == null) return;
+    setState(() => _isLoadingMore = true);
 
-      final List<Map<String, dynamic>> pedidos = docs.map((doc) {
-        final Map data = doc.map;
-        final String id = doc.id;
-        return {'id_doc': id, ...Map<String, dynamic>.from(data)};
+    final query = (firestore as mobile.FirebaseFirestore)
+        .collection('pedidos')
+        .where('created_at', isGreaterThanOrEqualTo: _startDate)
+        .where('created_at', isLessThan: _endDate.add(const Duration(days: 1)))
+        .orderBy('created_at', descending: true)
+        .startAfterDocument(_lastDocument!)
+        .limit(_pageSize);
+
+    final snapshot = await query.get();
+    final newPedidos = snapshot.docs.map((doc) {
+      final data = doc.data();
+      return {'id_doc': doc.id, ...data};
+    }).toList();
+
+    if (newPedidos.isNotEmpty) {
+      _lastDocument = snapshot.docs.last;
+      setState(() {
+        _allPedidos.addAll(newPedidos);
+        _filterPedidos();
+      });
+    }
+    setState(() => _isLoadingMore = false);
+  }
+
+  // ============ DESKTOP OTIMIZADO ============
+  Future<void> _loadPedidosDesktop({bool initial = false}) async {
+    if (initial) {
+      setState(() {
+        _isInitialLoading = true;
+        _allPedidos.clear();
+        _lastCreatedAt = null;
+      });
+    } else {
+      if (_isLoadingMore) return;
+      setState(() => _isLoadingMore = true);
+    }
+
+    try {
+      var query = (firestore as desktop.Firestore)
+          .collection('pedidos')
+          .where('created_at', isGreaterThanOrEqualTo: _startDate)
+          .where(
+            'created_at',
+            isLessThan: _endDate.add(const Duration(days: 1)),
+          )
+          .orderBy('created_at', descending: true)
+          .limit(_pageSize);
+
+      if (!initial && _lastCreatedAt != null) {
+        query = query.where(
+          'created_at',
+          isLessThan: _lastCreatedAt,
+        );
+      }
+
+      final docs = await query.get();
+
+      if (docs.isEmpty) {
+        setState(() {
+          _isInitialLoading = false;
+          _isLoadingMore = false;
+        });
+        return;
+      }
+
+      final pedidos = docs.map((doc) {
+        final data = doc.map;
+        return {
+          'id_doc': doc.id,
+          ...Map<String, dynamic>.from(data),
+        };
       }).toList();
 
+      final lastDoc = docs.last;
+      _lastCreatedAt = lastDoc['created_at'] as DateTime;
+
       setState(() {
-        _allPedidos = pedidos;
+        if (initial) {
+          _allPedidos = pedidos;
+        } else {
+          _allPedidos.addAll(pedidos);
+        }
+
         _filterPedidos();
         _isInitialLoading = false;
+        _isLoadingMore = false;
       });
     } catch (e) {
       setState(() {
         _errorMessage = 'Erro ao carregar pedidos: $e';
         _isInitialLoading = false;
+        _isLoadingMore = false;
       });
     }
   }
 
-  void _startPolling() {
-    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (mounted) _loadPedidosDesktop();
-    });
-  }
-
   @override
   void dispose() {
-    _pollingTimer?.cancel();
     _streamSubscription?.cancel();
     _headerScrollController.dispose();
     _bodyScrollController.dispose();
     _startDateController.dispose();
     _endDateController.dispose();
     super.dispose();
+  }
+
+  void _applyDateFilter() {
+    _lastDocument = null;
+    _desktopOffset = 0;
+    _allPedidos.clear();
+    _isInitialLoading = true;
+    setState(() {});
+
+    if (_isDesktop) {
+      _loadPedidosDesktop(initial: true);
+    } else {
+      _initMobileStream();
+    }
   }
 
   void _filterPedidos() {
@@ -254,41 +358,28 @@ String getNomeCurto(String? nomeCompleto) {
       }).toList();
     }
 
-    temp = temp.where((p) {
-      final date = _toDateTime(p['created_at']);
-      return date.isAfter(_startDate.subtract(const Duration(seconds: 1))) &&
-          date.isBefore(_endDate.add(const Duration(seconds: 1)));
-    }).toList();
-
-  if (_selectedStatus != 'Todos') {
-  temp = temp.where((p) {
-    final statusBanco = (p['status'] ?? '').toString().trim().toLowerCase();
-
-    switch (_selectedStatus) {
-      case 'Registrado':
-        return statusBanco == '' || 
-               statusBanco == '-' || 
-               statusBanco.contains('registrad');
-
-      case 'Saiu pra Entrega':
-        return statusBanco.contains('saiu') || 
-               statusBanco.contains('entrega');
-
-      case 'Concluído':
-        return statusBanco.contains('concluid') || 
-               statusBanco.contains('concluido');
-
-      case 'Cancelado':
-        return statusBanco.contains('cancel');
-
-      case '-':
-        return statusBanco == '' || statusBanco == '-';
-
-      default:
-        return statusBanco.contains(_selectedStatus.toLowerCase());
+    if (_selectedStatus != 'Todos') {
+      temp = temp.where((p) {
+        final statusBanco = (p['status'] ?? '').toString().trim().toLowerCase();
+        switch (_selectedStatus) {
+          case 'Registrado':
+            return statusBanco == '' ||
+                statusBanco == '-' ||
+                statusBanco.contains('registrad');
+          case 'Saiu pra Entrega':
+            return statusBanco.contains('saiu') || statusBanco.contains('entrega');
+          case 'Concluído':
+            return statusBanco.contains('concluid') || statusBanco.contains('concluido');
+          case 'Cancelado':
+            return statusBanco.contains('cancel');
+          case '-':
+            return statusBanco == '' || statusBanco == '-';
+          default:
+            return statusBanco.contains(_selectedStatus.toLowerCase());
+        }
+      }).toList();
     }
-  }).toList();
-}
+
     temp.sort((a, b) {
       final agA = a['agendamento']?['data'];
       final agB = b['agendamento']?['data'];
@@ -329,7 +420,7 @@ String getNomeCurto(String? nomeCompleto) {
       setState(() {
         _startDate = DateTime(picked.year, picked.month, picked.day);
         _startDateController.text = DateFormat('dd/MM/yyyy').format(_startDate);
-        _filterPedidos();
+        _applyDateFilter();
       });
     }
   }
@@ -358,7 +449,7 @@ String getNomeCurto(String? nomeCompleto) {
       setState(() {
         _endDate = DateTime(picked.year, picked.month, picked.day, 23, 59, 59);
         _endDateController.text = DateFormat('dd/MM/yyyy').format(_endDate);
-        _filterPedidos();
+        _applyDateFilter();
       });
     }
   }
@@ -504,7 +595,7 @@ String getNomeCurto(String? nomeCompleto) {
                         _buildModernDetailRow('Horário do Pedido', _formatHorario(pedido['horario_pedido']?.toString())),
                         _buildModernDetailRow('Agendado para', dataAgendamento),
                         if (temAgendamento) _buildModernDetailRow('Janela de Entrega', janelaTexto),
-                        _buildModernDetailRow('CD', cdName), // CORRIGIDO
+                        _buildModernDetailRow('CD', cdName),
                         if (entregador != null && entregador != '-' && entregador.isNotEmpty)
                           _buildModernDetailRow('Entregador', entregador),
                         if (lojaOrigem != null && lojaOrigem.isNotEmpty) _buildModernDetailRow('Loja Origem', lojaOrigem),
@@ -717,6 +808,18 @@ String getNomeCurto(String? nomeCompleto) {
             ],
           ),
         ),
+        // BOTÃO DE REFRESH MANUAL
+        IconButton(
+          onPressed: () {
+            if(_isDesktop) {
+              _loadPedidosDesktop(initial: true);
+            } else {
+              _initMobileStream();
+            }
+          }, 
+          icon: Icon(Icons.refresh, color: primaryColor, size: 28),
+          tooltip: 'Atualizar Lista',
+        ),
       ],
     );
   }
@@ -871,8 +974,9 @@ String getNomeCurto(String? nomeCompleto) {
                   onTap: _pickEndDate,
                 ),
               ),
+              // CORREÇÃO VISUAL DO FILTRO DE STATUS (Aumentei de 200 para 230)
               SizedBox(
-                width: 200,
+                width: 230, 
                 child: DropdownButtonFormField<String>(
                   value: _selectedStatus,
                   decoration: InputDecoration(
@@ -981,7 +1085,7 @@ String getNomeCurto(String? nomeCompleto) {
             ),
           ),
           // Botão Carregar Mais
-          if (_filteredPedidos.length < _totalFilteredCount)
+          if (_allPedidos.length < _totalFilteredCount)
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -990,22 +1094,28 @@ String getNomeCurto(String? nomeCompleto) {
                 border: Border(top: BorderSide(color: borderColor)),
               ),
               child: Center(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _maxDisplayPedidos += 200;
-                      _filterPedidos();
-                    });
-                  },
-                  icon: const Icon(Icons.expand_more),
-                  label: Text('Carregar Mais ($_totalFilteredCount total)', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
+                child: _isLoadingMore
+                    ? const CircularProgressIndicator()
+                    : ElevatedButton.icon(
+                        // ALTERAÇÃO 3: Incrementa de 100 em 100
+                        onPressed: () {
+                          _maxDisplayPedidos += 100;
+                          if (_isDesktop) {
+                            _loadPedidosDesktop();
+                          } else {
+                            _loadMoreMobile();
+                          }
+                          _filterPedidos();
+                        },
+                        icon: const Icon(Icons.expand_more),
+                        label: Text('Carregar Mais ($_totalFilteredCount total)', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
               ),
             ),
         ],
@@ -1051,9 +1161,9 @@ String getNomeCurto(String? nomeCompleto) {
             SizedBox(width: _cHora, child: Text(horario, textAlign: TextAlign.center, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w500))),
             SizedBox(width: _cNome, child: Text(nome, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600))),
             SizedBox(width: _cBairro, child: Text(bairro, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 13.5))),
-            SizedBox(width: _cCd, child: Center(child: _badgeCompact(cdName, cdColor))),
-            SizedBox(width: _cStatus, child: Center(child: _badgeCompact(status, statusColor, icon: _getStatusIcon(status)))),
-            SizedBox(width: _cEntrega, child: Center(child: _badgeCompact(tipo, entregaColor, icon: tipo == 'Delivery' ? Icons.delivery_dining : Icons.store_mall_directory))),
+            SizedBox(width: _cCd, child: Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: _cCd - 10), child: _badgeCompact(cdName, cdColor)))),
+            SizedBox(width: _cStatus, child: Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: _cStatus - 10), child: _badgeCompact(status, statusColor, icon: _getStatusIcon(status))))),
+            SizedBox(width: _cEntrega, child: Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: _cEntrega - 10), child: _badgeCompact(tipo, entregaColor, icon: tipo == 'Delivery' ? Icons.delivery_dining : Icons.store_mall_directory)))),
             SizedBox(width: _cData, child: Text(dataAg, textAlign: TextAlign.center, style: GoogleFonts.poppins(fontSize: 13.5))),
             SizedBox(width: _cEndPad, child: Center(child: Icon(Icons.arrow_forward_ios_rounded, size: 17, color: primaryColor.withOpacity(0.7)))),
           ],
