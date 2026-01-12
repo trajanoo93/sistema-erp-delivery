@@ -12,11 +12,16 @@ class ConferirPagamentosPage extends StatefulWidget {
 }
 
 class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
+  // --- ESTADO ---
   String _paymentMethod = 'pix';
   String? _selectedUnidade;
   String _statusFilter = 'todos';
   String _nameFilter = '';
-  int _currentPage = 1;
+  
+  // Controle de Paginação
+  int _currentPage = 1;             // Usado pelo Pagar.me
+  String? _stripeNextPageToken;     // Usado pelo Stripe
+  
   bool _isLoading = false;
   List<dynamic> _payments = [];
   bool _hasMore = true;
@@ -33,8 +38,9 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
     _fetchPayments();
   }
 
+  // --- LÓGICA DE BUSCA ---
   Future<void> _fetchPayments({bool append = false}) async {
-    if (_isLoading || !_hasMore) return;
+    if (_isLoading) return;
 
     setState(() {
       _isLoading = true;
@@ -42,14 +48,27 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
 
     try {
       final now = DateTime.now();
-      final startDate = DateFormat('yyyy-MM-dd').format(now.subtract(Duration(days: 90)));
+      // Pega os últimos 90 dias
+      final startDate = DateFormat('yyyy-MM-dd').format(now.subtract(const Duration(days: 90)));
       final endDate = DateFormat('yyyy-MM-dd').format(now);
 
-      final url = _paymentMethod == 'pix'
-          ? 'https://aogosto.com.br/proxy/consulta-pagarme.php?page=$_currentPage&size=10&unidade=$_selectedUnidade&start_date=$startDate&end_date=$endDate'
-          : 'https://aogosto.com.br/proxy/consulta-stripe.php?unidade=$_selectedUnidade&start_date=$startDate&end_date=$endDate';
+      String url;
 
-      print('Requisição ao proxy: $url');
+      // Montagem da URL baseada no método (Lógica de Paginação Diferente)
+      if (_paymentMethod == 'pix') {
+        // PAGAR.ME: Usa paginação numérica (page=1, page=2...)
+        url = 'https://aogosto.com.br/proxy/consulta-pagarme.php?page=$_currentPage&size=20&unidade=$_selectedUnidade&start_date=$startDate&end_date=$endDate';
+      } else {
+        // STRIPE: Usa token de cursor (page=cus_xyz...)
+        url = 'https://aogosto.com.br/proxy/consulta-stripe.php?unidade=$_selectedUnidade&start_date=$startDate&end_date=$endDate&limit=20';
+        
+        // Se estamos carregando mais e temos um token, adicionamos na URL
+        if (append && _stripeNextPageToken != null) {
+          url += '&page=$_stripeNextPageToken';
+        }
+      }
+
+      print('Requisição: $url');
 
       final response = await http.get(Uri.parse(url));
 
@@ -58,8 +77,17 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
       }
 
       final data = jsonDecode(response.body);
-      final List<dynamic> newPayments = data['data'];
-      final bool hasMore = data['has_more'] ?? (newPayments.length == 10);
+      final List<dynamic> newPayments = data['data'] ?? [];
+      
+      // Atualiza controles de paginação para a próxima chamada
+      if (_paymentMethod == 'credit_card') {
+         // Stripe retorna o token da próxima página
+         _stripeNextPageToken = data['next_page']; 
+         _hasMore = data['has_more'] ?? false;
+      } else {
+         // Pagar.me usa lógica simples de "tem mais se veio cheio" ou flag do backend
+         _hasMore = data['has_more'] ?? (newPayments.length >= 20);
+      }
 
       setState(() {
         if (append) {
@@ -67,12 +95,10 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
         } else {
           _payments = newPayments;
         }
-        _hasMore = hasMore;
-        print('Has more: $_hasMore, New payments: ${newPayments.length}');
       });
     } catch (error) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao buscar pagamentos: $error')),
+        SnackBar(content: Text('Erro: $error')),
       );
     } finally {
       setState(() {
@@ -83,16 +109,22 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
 
   void _loadMore() {
     if (!_hasMore || _isLoading) return;
-    setState(() {
-      _currentPage++;
-      print('Loading more, page: $_currentPage');
-    });
+    
+    // Apenas incrementa contador visual/lógico para Pagar.me
+    // Para Stripe, o token já foi salvo no _fetchPayments anterior
+    if (_paymentMethod == 'pix') {
+      setState(() {
+        _currentPage++;
+      });
+    }
+    
     _fetchPayments(append: true);
   }
 
   void _refreshPayments() {
     setState(() {
       _currentPage = 1;
+      _stripeNextPageToken = null; // Reseta o token do Stripe
       _hasMore = true;
       _payments.clear();
       _nameFilter = '';
@@ -101,13 +133,64 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
     _fetchPayments();
   }
 
+  // --- TRADUÇÃO E CORES DE STATUS ---
+  String _getStatusLabel(String status) {
+    final s = status.toLowerCase();
+    
+    if (['succeeded', 'paid'].contains(s)) return 'Pago';
+    if (['pending', 'processing', 'waiting_payment', 'requires_action', 'requires_confirmation'].contains(s)) return 'Pendente';
+    if (['failed', 'refused', 'requires_payment_method'].contains(s)) return 'Falhou';
+    if (['canceled', 'cancelled'].contains(s)) return 'Cancelado';
+    if (['refunded', 'voided', 'partial_refunded'].contains(s)) return 'Reembolsado';
+    
+    return status; 
+  }
+
+  Color _getStatusColor(String status) {
+    final s = status.toLowerCase();
+
+    if (['succeeded', 'paid'].contains(s)) return Colors.green.shade600;
+    if (['pending', 'processing', 'waiting_payment', 'requires_action', 'requires_confirmation'].contains(s)) return Colors.orange.shade600;
+    if (['failed', 'refused', 'requires_payment_method'].contains(s)) return Colors.red.shade600;
+    if (['canceled', 'cancelled'].contains(s)) return Colors.red.shade900;
+    if (['refunded', 'voided', 'partial_refunded'].contains(s)) return Colors.purple.shade600;
+    
+    return Colors.grey.shade600;
+  }
+
+  IconData _getStatusIcon(String status) {
+    final s = status.toLowerCase();
+    
+    if (['succeeded', 'paid'].contains(s)) return Icons.check_circle_outline;
+    if (['pending', 'processing', 'waiting_payment', 'requires_action', 'requires_confirmation'].contains(s)) return Icons.access_time;
+    if (['failed', 'refused', 'requires_payment_method'].contains(s)) return Icons.error_outline;
+    if (['canceled', 'cancelled'].contains(s)) return Icons.cancel_outlined;
+    if (['refunded', 'voided', 'partial_refunded'].contains(s)) return Icons.undo;
+    
+    return Icons.help_outline;
+  }
+
+  // --- FILTROS LOCAIS ---
   List<dynamic> get _filteredPayments {
     List<dynamic> filtered = _payments;
 
     if (_statusFilter != 'todos') {
       filtered = filtered.where((payment) {
-        final status = payment['status'];
-        return status == (_statusFilter == 'pendente' ? 'pending' : 'paid');
+        final rawStatus = payment['status'].toString().toLowerCase();
+        
+        // Mapeamento local dos filtros do dropdown para os status da API
+        if (_statusFilter == 'pago') {
+          return ['paid', 'succeeded'].contains(rawStatus);
+        } else if (_statusFilter == 'pendente') {
+          return ['pending', 'processing', 'waiting_payment', 'requires_action', 'requires_confirmation'].contains(rawStatus);
+        } else if (_statusFilter == 'falhou') {
+          return ['failed', 'refused', 'requires_payment_method'].contains(rawStatus);
+        } else if (_statusFilter == 'cancelado') {
+          return ['canceled', 'cancelled'].contains(rawStatus);
+        } else if (_statusFilter == 'reembolsado') {
+          return ['refunded', 'voided', 'partial_refunded'].contains(rawStatus);
+        }
+        return true;
       }).toList();
     }
 
@@ -129,6 +212,7 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
     super.dispose();
   }
 
+  // --- UI ---
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -137,40 +221,25 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Selecione o método de pagamento e a unidade para consultar os pagamentos:',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: Colors.black54,
-              fontWeight: FontWeight.w400,
-            ),
+            'Selecione o método de pagamento e a unidade para consultar:',
+            style: GoogleFonts.poppins(fontSize: 14, color: Colors.black54),
           ),
           const SizedBox(height: 16),
 
+          // --- CARD DE CONTROLES ---
           Card(
             elevation: 4,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Container(
+              padding: const EdgeInsets.all(20.0),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white,
-                    Colors.orange.shade50.withOpacity(0.5),
-                  ],
+                  colors: [Colors.white, Colors.orange.shade50.withOpacity(0.5)],
                 ),
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.orange.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
               ),
-              padding: const EdgeInsets.all(20.0),
               child: Column(
                 children: [
                   Row(
@@ -178,61 +247,17 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           value: _paymentMethod,
-                          decoration: InputDecoration(
-                            labelText: 'Método de Pagamento',
-                            labelStyle: GoogleFonts.poppins(
-                              color: Colors.black54,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.orange.shade200,
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.orange.shade200,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.orange.shade600,
-                                width: 2,
-                              ),
-                            ),
-                            prefixIcon: Icon(
-                              Icons.payment,
-                              color: Colors.orange.shade600,
-                            ),
-                            filled: true,
-                            fillColor: Colors.white,
-                          ),
+                          decoration: _inputDecoration('Método', Icons.payment),
                           items: const [
-                            DropdownMenuItem(
-                              value: 'pix',
-                              child: Text('PIX (Pagar.me)'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'credit_card',
-                              child: Text('Cartão de Crédito (Stripe)'),
-                            ),
+                            DropdownMenuItem(value: 'pix', child: Text('PIX (Pagar.me)')),
+                            DropdownMenuItem(value: 'credit_card', child: Text('Cartão (Stripe)')),
                           ],
                           onChanged: (value) {
                             setState(() {
                               _paymentMethod = value!;
-                              _selectedUnidade = _paymentMethod == 'pix'
-                                  ? _unidadesPix[0]
-                                  : _unidadesStripe[0];
-                              _currentPage = 1;
-                              _hasMore = true;
-                              _payments.clear();
-                              _nameFilter = '';
-                              _nameFilterController.clear();
+                              _selectedUnidade = _paymentMethod == 'pix' ? _unidadesPix[0] : _unidadesStripe[0];
+                              _refreshPayments(); // Reseta tudo ao mudar método
                             });
-                            _fetchPayments();
                           },
                         ),
                       ),
@@ -240,54 +265,15 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           value: _selectedUnidade,
-                          decoration: InputDecoration(
-                            labelText: 'Unidade da Loja',
-                            labelStyle: GoogleFonts.poppins(
-                              color: Colors.black54,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.orange.shade200,
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.orange.shade200,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.orange.shade600,
-                                width: 2,
-                              ),
-                            ),
-                            prefixIcon: Icon(
-                              Icons.store,
-                              color: Colors.orange.shade600,
-                            ),
-                            filled: true,
-                            fillColor: Colors.white,
-                          ),
+                          decoration: _inputDecoration('Unidade', Icons.store),
                           items: (_paymentMethod == 'pix' ? _unidadesPix : _unidadesStripe)
-                              .map((unidade) => DropdownMenuItem(
-                                    value: unidade,
-                                    child: Text(unidade),
-                                  ))
+                              .map((u) => DropdownMenuItem(value: u, child: Text(u)))
                               .toList(),
                           onChanged: (value) {
                             setState(() {
                               _selectedUnidade = value;
-                              _currentPage = 1;
-                              _hasMore = true;
-                              _payments.clear();
-                              _nameFilter = '';
-                              _nameFilterController.clear();
+                              _refreshPayments();
                             });
-                            _fetchPayments();
                           },
                         ),
                       ),
@@ -299,100 +285,24 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
                       Expanded(
                         child: TextFormField(
                           controller: _nameFilterController,
-                          decoration: InputDecoration(
-                            labelText: 'Filtrar por Nome',
-                            labelStyle: GoogleFonts.poppins(
-                              color: Colors.black54,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.orange.shade200,
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.orange.shade200,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.orange.shade600,
-                                width: 2,
-                              ),
-                            ),
-                            prefixIcon: Icon(
-                              Icons.search,
-                              color: Colors.orange.shade600,
-                            ),
-                            filled: true,
-                            fillColor: Colors.white,
-                          ),
-                          onChanged: (value) {
-                            setState(() {
-                              _nameFilter = value;
-                            });
-                          },
+                          decoration: _inputDecoration('Buscar Nome', Icons.search),
+                          onChanged: (value) => setState(() => _nameFilter = value),
                         ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           value: _statusFilter,
-                          decoration: InputDecoration(
-                            labelText: 'Filtrar por Status',
-                            labelStyle: GoogleFonts.poppins(
-                              color: Colors.black54,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.orange.shade200,
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.orange.shade200,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.orange.shade600,
-                                width: 2,
-                              ),
-                            ),
-                            prefixIcon: Icon(
-                              Icons.filter_list,
-                              color: Colors.orange.shade600,
-                            ),
-                            filled: true,
-                            fillColor: Colors.white,
-                          ),
+                          decoration: _inputDecoration('Status', Icons.filter_list),
                           items: const [
-                            DropdownMenuItem(
-                              value: 'todos',
-                              child: Text('Todos'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'pendente',
-                              child: Text('Pendente'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'pago',
-                              child: Text('Pago'),
-                            ),
+                            DropdownMenuItem(value: 'todos', child: Text('Todos')),
+                            DropdownMenuItem(value: 'pendente', child: Text('Pendente')),
+                            DropdownMenuItem(value: 'pago', child: Text('Pago')),
+                            DropdownMenuItem(value: 'falhou', child: Text('Falhou')),
+                            DropdownMenuItem(value: 'cancelado', child: Text('Cancelado')),
+                            DropdownMenuItem(value: 'reembolsado', child: Text('Reembolsado')),
                           ],
-                          onChanged: (value) {
-                            setState(() {
-                              _statusFilter = value!;
-                            });
-                          },
+                          onChanged: (value) => setState(() => _statusFilter = value!),
                         ),
                       ),
                     ],
@@ -400,37 +310,16 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _refreshPayments,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange.shade600,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 5,
-                          shadowColor: Colors.orange.withOpacity(0.3),
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 3,
-                                ),
-                              )
-                            : Text(
-                                'Atualizar',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _refreshPayments,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange.shade600,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
+                      child: _isLoading
+                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : Text('Atualizar Lista', style: GoogleFonts.poppins(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
                     ),
                   ),
                 ],
@@ -440,152 +329,76 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
 
           const SizedBox(height: 16),
 
+          // --- LISTA DE DADOS ---
           Expanded(
             child: _filteredPayments.isEmpty && !_isLoading
-                ? Center(
-                    child: Text(
-                      'Nenhum pagamento encontrado.',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: Colors.black54,
-                      ),
-                    ),
-                  )
+                ? Center(child: Text('Nenhum pagamento encontrado.', style: GoogleFonts.poppins(color: Colors.grey)))
                 : Card(
                     elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Colors.white,
-                            Colors.orange.shade50.withOpacity(0.5),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.orange.withOpacity(0.1),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                      padding: const EdgeInsets.all(8),
                       child: SingleChildScrollView(
                         scrollDirection: Axis.vertical,
-                        child: DataTable(
-                          columnSpacing: 16.0,
-                          horizontalMargin: 16.0,
-                          columns: [
-                            DataColumn(
-                              label: Text(
-                                'Nome do Cliente',
-                                style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ),
-                            DataColumn(
-                              label: Text(
-                                'Valor (R\$)',
-                                style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ),
-                            DataColumn(
-                              label: Text(
-                                'Status',
-                                style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ),
-                            DataColumn(
-                              label: Text(
-                                'Data de Criação',
-                                style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ),
-                          ],
-                          rows: _filteredPayments.map((payment) {
-                            final nomeCliente = _paymentMethod == 'pix'
-                                ? (payment['customer']?['name'] ?? 'N/A')
-                                : (payment['customer']?['name'] ?? payment['description'] ?? 'N/A');
-                            final truncatedNomeCliente = nomeCliente.length > 15
-                                ? '${nomeCliente.substring(0, 15)}...'
-                                : nomeCliente;
-                            final valorReais = (payment['amount'] / 100).toStringAsFixed(2);
-                            final status = payment['status'];
-                            final dataCriacao = DateFormat('dd/MM/yyyy HH:mm')
-                                .format(DateTime.parse(payment['created_at']).toLocal());
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            columnSpacing: 20,
+                            horizontalMargin: 12,
+                            headingRowColor: WidgetStateProperty.all(Colors.grey.shade50),
+                            columns: [
+                              DataColumn(label: Text('Data', style: GoogleFonts.poppins(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('Cliente', style: GoogleFonts.poppins(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('Status', style: GoogleFonts.poppins(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('Valor', style: GoogleFonts.poppins(fontWeight: FontWeight.bold))),
+                            ],
+                            rows: _filteredPayments.map((payment) {
+                              // Parsing de Dados
+                              final nome = _paymentMethod == 'pix'
+                                  ? (payment['customer']?['name'] ?? 'N/A')
+                                  : (payment['customer']?['name'] ?? payment['description'] ?? 'N/A');
+                              final nomeCurto = nome.length > 25 ? '${nome.substring(0, 25)}...' : nome;
+                              
+                              final val = (payment['amount'] is int) ? payment['amount'] / 100 : double.tryParse(payment['amount'].toString()) ?? 0.0;
+                              final valorFmt = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$').format(val);
+                              
+                              final status = payment['status'] ?? '';
+                              
+                              String dataFmt = '-';
+                              if (payment['created_at'] != null) {
+                                try {
+                                  dataFmt = DateFormat('dd/MM HH:mm').format(DateTime.parse(payment['created_at']).toLocal());
+                                } catch (_) {}
+                              }
 
-                            return DataRow(
-                              cells: [
-                                DataCell(
-                                  Text(
-                                    truncatedNomeCliente,
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                ),
-                                DataCell(
-                                  Text(
-                                    'R\$ $valorReais',
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                ),
-                                DataCell(
-                                  Chip(
-                                    label: Text(
-                                      status == 'pending' || status == 'unpaid' || status == 'failed'
-                                          ? 'Pendente'
-                                          : 'Pago',
-                                      style: GoogleFonts.poppins(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w500,
+                              return DataRow(
+                                cells: [
+                                  DataCell(Text(dataFmt, style: GoogleFonts.poppins(fontSize: 13))),
+                                  DataCell(Text(nomeCurto, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500))),
+                                  DataCell(
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: _getStatusColor(status).withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(color: _getStatusColor(status).withOpacity(0.3)),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(_getStatusIcon(status), size: 14, color: _getStatusColor(status)),
+                                          const SizedBox(width: 4),
+                                          Text(_getStatusLabel(status), style: GoogleFonts.poppins(color: _getStatusColor(status), fontWeight: FontWeight.w600, fontSize: 11)),
+                                        ],
                                       ),
                                     ),
-                                    backgroundColor: status == 'pending' || status == 'unpaid' || status == 'failed'
-                                        ? Colors.orange.shade600
-                                        : Colors.green.shade600,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                   ),
-                                ),
-                                DataCell(
-                                  Text(
-                                    dataCriacao,
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              color: WidgetStateProperty.resolveWith<Color?>(
-                                (Set<WidgetState> states) {
-                                  return states.contains(WidgetState.hovered)
-                                      ? Colors.orange.shade50.withOpacity(0.5)
-                                      : null;
-                                },
-                              ),
-                            );
-                          }).toList(),
+                                  DataCell(Text(valorFmt, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold))),
+                                ],
+                              );
+                            }).toList(),
+                          ),
                         ),
                       ),
                     ),
@@ -596,42 +409,30 @@ class _ConferirPagamentosPageState extends State<ConferirPagamentosPage> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16.0),
               child: Center(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _loadMore,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange.shade600,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 5,
-                      shadowColor: Colors.orange.withOpacity(0.3),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 3,
-                            ),
-                          )
-                        : Text(
-                            'Carregar Mais',
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                  ),
+                child: TextButton.icon(
+                  onPressed: _isLoading ? null : _loadMore,
+                  icon: const Icon(Icons.arrow_downward, size: 16),
+                  label: Text('Carregar Mais', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                  style: TextButton.styleFrom(foregroundColor: Colors.orange.shade700),
                 ),
               ),
             ),
         ],
       ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: GoogleFonts.poppins(color: Colors.black54, fontSize: 13),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.orange.shade600, width: 2)),
+      prefixIcon: Icon(icon, color: Colors.orange.shade600, size: 20),
+      filled: true,
+      fillColor: Colors.white,
     );
   }
 }
